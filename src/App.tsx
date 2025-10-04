@@ -178,7 +178,8 @@ export default function App() {
   const [oiSupplierRef, setOiSupplierRef] = useState("");
   const [oiQty, setOiQty] = useState("");
   const [oiUnitPrice, setOiUnitPrice] = useState("");
-  const [addingItem, setAddingItem] = useState(false);
+  const [addingItem] = useState(false);
+
 
   /** ---- Inventaire (avec état + emplacement) ---- */
   const [inventory, setInventory] = useState<InventoryRow[]>([]);
@@ -258,12 +259,14 @@ export default function App() {
     if (error) notify(error.message, "error"); else setSites((data || []) as SiteRow[]);
   }
   async function addSite(e: React.FormEvent) {
-    e.preventiventDefault(); if (!siteName.trim()) return;
-    const { error } = await supabase.from("sites").insert({ name: siteName.trim(), note: siteNote || null });
-    if (error) return notify(error.message, "error");
-    setSiteName(""); setSiteNote("");
-    await loadSites(); notify("Site ajouté", "success");
-  }
+  e.preventDefault();
+  if (!siteName.trim()) return;
+  const { error } = await supabase.from("sites").insert({ name: siteName.trim(), note: siteNote || null });
+  if (error) return notify(error.message, "error");
+  setSiteName(""); setSiteNote("");
+  await loadSites(); notify("Site ajouté", "success");
+}
+
 
   async function loadSupplierRefs() {
     const { data, error } = await supabase
