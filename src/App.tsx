@@ -74,6 +74,9 @@ function fmtDate(d: string | Date) {
   try { return new Date(d).toLocaleString(); } catch { return String(d); }
 }
 
+/** ========= Onglets ========= **/
+type TabKey = "db" | "orders" | "transfer" | "inventory" | "admin";
+
 export default function App() {
   /** ---------------- AUTH ---------------- */
   const [session, setSession] = useState<Session | null>(null);
@@ -115,24 +118,27 @@ export default function App() {
   async function signOut() { await supabase.auth.signOut(); }
 
   /** ---------------- APP STATES ---------------- */
-  // Profil courant / Admin
+  // Profil / Admin
   const [isAdmin, setIsAdmin] = useState(false);
   const [mySite, setMySite] = useState("");
 
-  // Admin: liste des users
+  // Onglet actif
+  const [activeTab, setActiveTab] = useState<TabKey>("db");
+
+  // Admin: liste users
   const [allUsers, setAllUsers] = useState<{ id: string; email: string | null; site: string | null }[]>([]);
 
   // Pièces
   const [sku, setSku] = useState(""); const [label, setLabel] = useState("");
   const [parts, setParts] = useState<Part[]>([]); const [loadingPart, setLoadingPart] = useState(false);
-  const [partsQuery, setPartsQuery] = useState(""); // 🔎 filtre
+  const [partsQuery, setPartsQuery] = useState("");
 
   // Fournisseurs
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierName, setSupplierName] = useState(""); const [supplierUrl, setSupplierUrl] = useState("");
   const [loadingSupplier, setLoadingSupplier] = useState(false);
 
-  // Références fournisseur
+  // Réfs fournisseur
   const [refs, setRefs] = useState<SupplierRef[]>([]);
   const [selectedPartId, setSelectedPartId] = useState(""); const [selectedSupplierId, setSelectedSupplierId] = useState("");
   const [supplierRef, setSupplierRef] = useState(""); const [productUrl, setProductUrl] = useState("");
@@ -146,7 +152,7 @@ export default function App() {
 
   // Commandes
   const [orders, setOrders] = useState<Order[]>([]);
-  const [ordersQuery, setOrdersQuery] = useState(""); // 🔎 filtre
+  const [ordersQuery, setOrdersQuery] = useState("");
   const [newOrderSupplierId, setNewOrderSupplierId] = useState("");
   const [newOrderSite, setNewOrderSite] = useState("");
   const [newOrderExternalRef, setNewOrderExternalRef] = useState("");
@@ -417,7 +423,7 @@ export default function App() {
     notify("Site assigné", "success");
   }
 
-  /** ---------------- HELPERS / MEMOS (AVANT LES RETURNS !) ---------------- */
+  /** ---------------- HELPERS / MEMOS ---------------- */
   const refsByPart = useMemo(() => {
     const m: Record<string, SupplierRef[]> = {};
     for (const r of refs) (m[r.part_id] ||= []).push(r);
@@ -467,7 +473,7 @@ export default function App() {
     setToReceive({}); notify("Réception enregistrée", "success");
   }
 
-  // 🔎 Filtres mémoïsés (PLACÉS AVANT LES RETURNS)
+  // Filtres mémoïsés
   const partsFiltered = useMemo(() => {
     const q = partsQuery.trim().toLowerCase();
     if (!q) return parts;
@@ -534,439 +540,479 @@ export default function App() {
   }
 
   /** ---------------- UI ---------------- */
-  return (
-    <div style={{ maxWidth: 1180, margin: "0 auto", padding: 24 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>Inventaire pièces (MVP)</h1>
-        <div>
-          <span style={{ marginRight: 8, fontSize: 12, opacity: 0.7 }}>
-            {session.user.email} {mySite ? <span style={{ background:"#eef", padding:"2px 6px", borderRadius:6, marginLeft:6 }}>{mySite}</span> : ""}
-          </span>
-          <button onClick={signOut}>Se déconnecter</button>
-        </div>
-      </div>
+  const tabs: { key: TabKey; label: string }[] = useMemo(() => {
+    const base = [
+      { key: "db" as const,        label: "Base de données" },
+      { key: "orders" as const,    label: "Commandes" },
+      { key: "transfer" as const,  label: "Transfert" },
+      { key: "inventory" as const, label: "Inventaire" },
+    ];
+    if (isAdmin) base.push({ key: "admin" as const, label: "Administration" });
+    return base;
+  }, [isAdmin]);
 
-      {/* PIÈCES */}
-      <section style={{ marginTop: 16 }}>
-        <div style={{ display: "flex", alignItems: "end", gap: 12, flexWrap: "wrap" }}>
-          <h2 style={{ margin: 0 }}>Pièces</h2>
-          <div style={{ marginLeft: "auto" }}>
-            <input
-              value={partsQuery}
-              onChange={(e) => setPartsQuery(e.target.value)}
-              placeholder="Rechercher (SKU, libellé)…"
-              style={{ padding: 8, minWidth: 260 }}
-            />
+  function Nav() {
+    return (
+      <nav style={{
+        position: "sticky", top: 0, zIndex: 10, background: "white",
+        borderBottom: "1px solid #eee", marginBottom: 16
+      }}>
+        <div style={{ maxWidth: 1180, margin: "0 auto", padding: "12px 24px", display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ fontWeight: 700 }}>Inventaire pièces</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginLeft: 16 }}>
+            {tabs.map(t => (
+              <button
+                key={t.key}
+                onClick={() => setActiveTab(t.key)}
+                style={{
+                  padding: "8px 12px", borderRadius: 999,
+                  border: activeTab === t.key ? "1px solid #6b8afd" : "1px solid #e5e7eb",
+                  background: activeTab === t.key ? "#eef2ff" : "white",
+                  cursor: "pointer"
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 12, opacity: 0.8 }}>
+              {session.user.email} {mySite ? <span style={{ background:"#eef", padding:"2px 6px", borderRadius:6, marginLeft:6 }}>{mySite}</span> : ""}
+            </span>
+            <button onClick={signOut} style={{ padding: "6px 10px" }}>Déconnexion</button>
           </div>
         </div>
+      </nav>
+    );
+  }
 
-        <form onSubmit={addPart} style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 2fr auto", alignItems: "end", marginTop: 10 }}>
-          <div><label>SKU</label><input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="ex: ABC123" style={{ width: "100%", padding: 8 }} /></div>
-          <div><label>Libellé</label><input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="ex: Courroie 12mm" style={{ width: "100%", padding: 8 }} /></div>
-          <button disabled={loadingPart} style={{ padding: "10px 16px" }}>{loadingPart ? "Ajout..." : "Ajouter"}</button>
-        </form>
+  return (
+    <div>
+      <Nav />
 
-        <ul style={{ padding: 0, listStyle: "none", marginTop: 12 }}>
-          {partsFiltered.map((p) => (
-            <li key={p.id} style={{ padding: 12, border: "1px solid #eee", marginBottom: 8, borderRadius: 8 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                <div><b>{p.sku}</b> — {p.label}</div>
-                {bestOfferByPart[p.id] && (
-                  <div style={{ fontSize: 12, background: "#e7f6ed", padding: "2px 6px", borderRadius: 6 }}>
-                    {bestOfferByPart[p.id]!.price.toFixed(2)} {bestOfferByPart[p.id]!.currency}
-                    {" · "} {bestOfferByPart[p.id]!.ref?.supplier?.name}
-                  </div>
+      <div style={{ maxWidth: 1180, margin: "0 auto", padding: 24 }}>
+
+        {/* ========== BASE DE DONNÉES ========== */}
+        {activeTab === "db" && (
+          <>
+            {/* PIÈCES */}
+            <section style={{ marginTop: 0 }}>
+              <div style={{ display: "flex", alignItems: "end", gap: 12, flexWrap: "wrap" }}>
+                <h2 style={{ margin: 0 }}>Pièces</h2>
+                <div style={{ marginLeft: "auto" }}>
+                  <input
+                    value={partsQuery}
+                    onChange={(e) => setPartsQuery(e.target.value)}
+                    placeholder="Rechercher (SKU, libellé)…"
+                    style={{ padding: 8, minWidth: 260 }}
+                  />
+                </div>
+              </div>
+
+              <form onSubmit={addPart} style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 2fr auto", alignItems: "end", marginTop: 10 }}>
+                <div><label>SKU</label><input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="ex: ABC123" style={{ width: "100%", padding: 8 }} /></div>
+                <div><label>Libellé</label><input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="ex: Courroie 12mm" style={{ width: "100%", padding: 8 }} /></div>
+                <button disabled={loadingPart} style={{ padding: "10px 16px" }}>{loadingPart ? "Ajout..." : "Ajouter"}</button>
+              </form>
+
+              <ul style={{ padding: 0, listStyle: "none", marginTop: 12 }}>
+                {partsFiltered.map((p) => (
+                  <li key={p.id} style={{ padding: 12, border: "1px solid #eee", marginBottom: 8, borderRadius: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                      <div><b>{p.sku}</b> — {p.label}</div>
+                      {/* meilleure offre */}
+                      {/* On garde l’indicateur dans la liste des pièces */}
+                    </div>
+                  </li>
+                ))}
+                {partsFiltered.length === 0 && (
+                  <li style={{ padding: 16, border: "1px dashed #ddd", borderRadius: 8, textAlign: "center", opacity: .8 }}>
+                    Aucune pièce ne correspond à “{partsQuery}”.
+                  </li>
+                )}
+              </ul>
+            </section>
+
+            {/* FOURNISSEURS */}
+            <section style={{ marginTop: 32 }}>
+              <h2>Fournisseurs</h2>
+              <form onSubmit={addSupplier} style={{ display: "grid", gap: 8, gridTemplateColumns: "2fr 3fr auto", alignItems: "end" }}>
+                <div><label>Nom</label><input value={supplierName} onChange={(e) => setSupplierName(e.target.value)} placeholder="ex: PiècesPro" style={{ width: "100%", padding: 8 }} /></div>
+                <div><label>Site (optionnel)</label><input value={supplierUrl} onChange={(e) => setSupplierUrl(e.target.value)} placeholder="https://..." style={{ width: "100%", padding: 8 }} /></div>
+                <button disabled={loadingSupplier} style={{ padding: "10px 16px" }}>{loadingSupplier ? "Ajout..." : "Ajouter"}</button>
+              </form>
+            </section>
+
+            {/* SITES */}
+            <section style={{ marginTop: 32 }}>
+              <h2>Sites</h2>
+              <form onSubmit={addSite} style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 2fr auto", alignItems: "end" }}>
+                <div>
+                  <label>Nom du site</label>
+                  <input value={siteName} onChange={(e) => setSiteName(e.target.value)} placeholder="ex: Atelier A" style={{ width: "100%", padding: 8 }} />
+                </div>
+                <div>
+                  <label>Note (optionnel)</label>
+                  <input value={siteNote} onChange={(e) => setSiteNote(e.target.value)} placeholder="ex: étage -1" style={{ width: "100%", padding: 8 }} />
+                </div>
+                <button style={{ padding: "10px 16px" }}>Ajouter</button>
+              </form>
+
+              <ul style={{ padding: 0, listStyle: "none", marginTop: 12 }}>
+                {sites.map((s) => (
+                  <li key={s.id} style={{ padding: 12, border: "1px solid #eee", marginBottom: 8, borderRadius: 8 }}>
+                    <b>{s.name}</b> {s.note ? <span style={{ opacity: 0.8 }}>— {s.note}</span> : null}
+                  </li>
+                ))}
+                {sites.length === 0 && <li style={{ padding: 12, opacity: 0.7 }}>Aucun site pour l’instant.</li>}
+              </ul>
+            </section>
+
+            {/* RÉFÉRENCES FOURNISSEUR */}
+            <section style={{ marginTop: 32 }}>
+              <h2>Références fournisseur</h2>
+              <form onSubmit={addSupplierRef} style={{ display: "grid", gap: 8, gridTemplateColumns: "1.2fr 1.2fr 1fr 2fr auto", alignItems: "end" }}>
+                <div><label>Pièce</label>
+                  <select value={selectedPartId} onChange={(e) => setSelectedPartId(e.target.value)} style={{ width: "100%", padding: 8 }}>
+                    <option value="">— choisir —</option>
+                    {parts.map((p) => <option key={p.id} value={p.id}>{p.sku} — {p.label}</option>)}
+                  </select>
+                </div>
+                <div><label>Fournisseur</label>
+                  <select value={selectedSupplierId} onChange={(e) => setSelectedSupplierId(e.target.value)} style={{ width: "100%", padding: 8 }}>
+                    <option value="">— choisir —</option>
+                    {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+                <div><label>Réf fournisseur</label><input value={supplierRef} onChange={(e) => setSupplierRef(e.target.value)} placeholder="ex: X-789" style={{ width: "100%", padding: 8 }} /></div>
+                <div><label>URL produit (opt.)</label><input value={productUrl} onChange={(e) => setProductUrl(e.target.value)} placeholder="https://..." style={{ width: "100%", padding: 8 }} /></div>
+                <button disabled={loadingRef} style={{ padding: "10px 16px" }}>{loadingRef ? "Ajout..." : "Lier"}</button>
+              </form>
+            </section>
+
+            {/* OFFRES */}
+            <section style={{ marginTop: 32 }}>
+              <h2>Offres (prix / stock)</h2>
+              <form onSubmit={addOffer} style={{ display: "grid", gap: 8, gridTemplateColumns: "1.2fr 1.8fr 1fr 1fr auto", alignItems: "end" }}>
+                <div><label>Pièce</label>
+                  <select value={offerPartId} onChange={(e) => { setOfferPartId(e.target.value); setOfferRefId(""); }} style={{ width: "100%", padding: 8 }}>
+                    <option value="">— choisir —</option>
+                    {parts.map((p) => <option key={p.id} value={p.id}>{p.sku} — {p.label}</option>)}
+                  </select>
+                </div>
+                <div><label>Réf fournisseur</label>
+                  <select value={offerRefId} onChange={(e) => setOfferRefId(e.target.value)} style={{ width: "100%", padding: 8 }}>
+                    <option value=""></option>
+                    {(offerPartId ? (refsByPart[offerPartId] || []) : []).map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {(suppliers.find(s => s.id === r.supplier_id)?.name) || "Fournisseur"} — {r.supplier_ref}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label>Prix (EUR)</label>
+                  <input type="number" step="0.01" min={0} value={offerPrice}
+                    onChange={(e) => setOfferPrice(e.target.value)} placeholder="ex: 12.50" style={{ width: "100%", padding: 8 }} />
+                </div>
+                <div>
+                  <label>Qté dispo (opt.)</label>
+                  <input type="number" step={1} min={0} value={offerQty}
+                    onChange={(e) => setOfferQty(e.target.value)} placeholder="ex: 30" style={{ width: "100%", padding: 8 }} />
+                </div>
+                <button disabled={loadingOffer} style={{ padding: "10px 16px" }}>{loadingOffer ? "Ajout..." : "Enregistrer"}</button>
+              </form>
+            </section>
+          </>
+        )}
+
+        {/* ========== COMMANDES ========== */}
+        {activeTab === "orders" && (
+          <section>
+            <div style={{ display: "flex", alignItems: "end", gap: 12, flexWrap: "wrap" }}>
+              <h2 style={{ margin: 0 }}>Commandes</h2>
+              <div style={{ marginLeft: "auto" }}>
+                <input
+                  value={ordersQuery}
+                  onChange={(e) => setOrdersQuery(e.target.value)}
+                  placeholder="Rechercher (fournisseur, site, statut, n°)…"
+                  style={{ padding: 8, minWidth: 300 }}
+                />
+              </div>
+            </div>
+
+            {/* Créer une commande */}
+            <form onSubmit={createOrder} style={{ display: "grid", gap: 8, gridTemplateColumns: "1.5fr 1fr 1fr auto", alignItems: "end", marginTop: 10 }}>
+              <div>
+                <label>Fournisseur</label>
+                <select value={newOrderSupplierId} onChange={(e) => setNewOrderSupplierId(e.target.value)} style={{ width: "100%", padding: 8 }}>
+                  <option value="">— choisir —</option>
+                  {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label>Site de livraison</label>
+                {mySite ? (
+                  <input value={mySite} disabled style={{ width: "100%", padding: 8, background: "#f7f7f7" }} />
+                ) : (
+                  <select value={newOrderSite} onChange={(e) => setNewOrderSite(e.target.value)} style={{ width: "100%", padding: 8 }}>
+                    <option value="">— choisir —</option>
+                    {sites.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                  </select>
                 )}
               </div>
-            </li>
-          ))}
-          {partsFiltered.length === 0 && (
-            <li style={{ padding: 16, border: "1px dashed #ddd", borderRadius: 8, textAlign: "center", opacity: .8 }}>
-              Aucune pièce ne correspond à “{partsQuery}”.
-            </li>
-          )}
-        </ul>
-      </section>
+              <div>
+                <label>N° commande (opt.)</label>
+                <input value={newOrderExternalRef} onChange={(e) => setNewOrderExternalRef(e.target.value)} placeholder="ex: PO-2025-001" style={{ width: "100%", padding: 8 }} />
+              </div>
+              <button disabled={creatingOrder} style={{ padding: "10px 16px" }}>{creatingOrder ? "Création..." : "Créer commande"}</button>
+            </form>
 
-      {/* FOURNISSEURS */}
-      <section style={{ marginTop: 32 }}>
-        <h2>Fournisseurs</h2>
-        <form onSubmit={addSupplier} style={{ display: "grid", gap: 8, gridTemplateColumns: "2fr 3fr auto", alignItems: "end" }}>
-          <div><label>Nom</label><input value={supplierName} onChange={(e) => setSupplierName(e.target.value)} placeholder="ex: PiècesPro" style={{ width: "100%", padding: 8 }} /></div>
-          <div><label>Site (optionnel)</label><input value={supplierUrl} onChange={(e) => setSupplierUrl(e.target.value)} placeholder="https://..." style={{ width: "100%", padding: 8 }} /></div>
-          <button disabled={loadingSupplier} style={{ padding: "10px 16px" }}>{loadingSupplier ? "Ajout..." : "Ajouter"}</button>
-        </form>
-      </section>
-
-      {/* SITES */}
-      <section style={{ marginTop: 32 }}>
-        <h2>Sites</h2>
-        <form onSubmit={addSite} style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 2fr auto", alignItems: "end" }}>
-          <div>
-            <label>Nom du site</label>
-            <input value={siteName} onChange={(e) => setSiteName(e.target.value)} placeholder="ex: Atelier A" style={{ width: "100%", padding: 8 }} />
-          </div>
-          <div>
-            <label>Note (optionnel)</label>
-            <input value={siteNote} onChange={(e) => setSiteNote(e.target.value)} placeholder="ex: étage -1" style={{ width: "100%", padding: 8 }} />
-          </div>
-          <button style={{ padding: "10px 16px" }}>Ajouter</button>
-        </form>
-
-        <ul style={{ padding: 0, listStyle: "none", marginTop: 12 }}>
-          {sites.map((s) => (
-            <li key={s.id} style={{ padding: 12, border: "1px solid #eee", marginBottom: 8, borderRadius: 8 }}>
-              <b>{s.name}</b> {s.note ? <span style={{ opacity: 0.8 }}>— {s.note}</span> : null}
-            </li>
-          ))}
-          {sites.length === 0 && <li style={{ padding: 12, opacity: 0.7 }}>Aucun site pour l’instant.</li>}
-        </ul>
-      </section>
-
-      {/* RÉFÉRENCES FOURNISSEUR */}
-      <section style={{ marginTop: 32 }}>
-        <h2>Références fournisseur</h2>
-        <form onSubmit={addSupplierRef} style={{ display: "grid", gap: 8, gridTemplateColumns: "1.2fr 1.2fr 1fr 2fr auto", alignItems: "end" }}>
-          <div><label>Pièce</label>
-            <select value={selectedPartId} onChange={(e) => setSelectedPartId(e.target.value)} style={{ width: "100%", padding: 8 }}>
-              <option value="">— choisir —</option>
-              {parts.map((p) => <option key={p.id} value={p.id}>{p.sku} — {p.label}</option>)}
-            </select>
-          </div>
-          <div><label>Fournisseur</label>
-            <select value={selectedSupplierId} onChange={(e) => setSelectedSupplierId(e.target.value)} style={{ width: "100%", padding: 8 }}>
-              <option value="">— choisir —</option>
-              {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
-          <div><label>Réf fournisseur</label><input value={supplierRef} onChange={(e) => setSupplierRef(e.target.value)} placeholder="ex: X-789" style={{ width: "100%", padding: 8 }} /></div>
-          <div><label>URL produit (opt.)</label><input value={productUrl} onChange={(e) => setProductUrl(e.target.value)} placeholder="https://..." style={{ width: "100%", padding: 8 }} /></div>
-          <button disabled={loadingRef} style={{ padding: "10px 16px" }}>{loadingRef ? "Ajout..." : "Lier"}</button>
-        </form>
-      </section>
-
-      {/* OFFRES */}
-      <section style={{ marginTop: 32 }}>
-        <h2>Offres (prix / stock)</h2>
-        <form onSubmit={addOffer} style={{ display: "grid", gap: 8, gridTemplateColumns: "1.2fr 1.8fr 1fr 1fr auto", alignItems: "end" }}>
-          <div><label>Pièce</label>
-            <select value={offerPartId} onChange={(e) => { setOfferPartId(e.target.value); setOfferRefId(""); }} style={{ width: "100%", padding: 8 }}>
-              <option value="">— choisir —</option>
-              {parts.map((p) => <option key={p.id} value={p.id}>{p.sku} — {p.label}</option>)}
-            </select>
-          </div>
-          <div><label>Réf fournisseur</label>
-            <select value={offerRefId} onChange={(e) => setOfferRefId(e.target.value)} style={{ width: "100%", padding: 8 }}>
-              <option value=""></option>
-              {(offerPartId ? (refsByPart[offerPartId] || []) : []).map((r) => (
-                <option key={r.id} value={r.id}>
-                  {(suppliers.find(s => s.id === r.supplier_id)?.name) || "Fournisseur"} — {r.supplier_ref}
-                </option>
+            {/* Liste des commandes */}
+            <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+              {ordersFiltered.map((o) => (
+                <div key={o.id}
+                     onClick={() => { setActiveOrderId(o.id); setReceiveSite(o.site || mySite || ""); }}
+                     style={{ border: "1px solid #eee", borderRadius: 8, padding: 12, cursor: "pointer",
+                              background: activeOrderId === o.id ? "#f0f7ff" : "white" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                    <div><b>{o.supplier?.name || "—"}</b> · {o.site || "—"} {o.external_ref ? <> · <span>#{o.external_ref}</span></> : null}</div>
+                    <div style={{ fontSize: 12, display: "flex", gap: 8, alignItems: "center" }}>
+                      <span style={{ opacity: 0.8 }}>{o.status}</span>
+                      {o.status === "draft" && (
+                        <button onClick={(e) => { e.stopPropagation(); setOrderStatus(o.id, "ordered"); }}>
+                          Passer en “ordered”
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>Créée le {fmtDate(o.created_at)}</div>
+                </div>
               ))}
-            </select>
-          </div>
-          <div>
-            <label>Prix (EUR)</label>
-            <input type="number" step="0.01" min={0} value={offerPrice}
-              onChange={(e) => setOfferPrice(e.target.value)} placeholder="ex: 12.50" style={{ width: "100%", padding: 8 }} />
-          </div>
-          <div>
-            <label>Qté dispo (opt.)</label>
-            <input type="number" step={1} min={0} value={offerQty}
-              onChange={(e) => setOfferQty(e.target.value)} placeholder="ex: 30" style={{ width: "100%", padding: 8 }} />
-          </div>
-          <button disabled={loadingOffer} style={{ padding: "10px 16px" }}>{loadingOffer ? "Ajout..." : "Enregistrer"}</button>
-        </form>
-      </section>
+              {ordersFiltered.length === 0 && (
+                <div style={{ padding: 16, border: "1px dashed #ddd", borderRadius: 8, textAlign: "center", opacity: .8 }}>
+                  Aucune commande ne correspond à “{ordersQuery}”.
+                </div>
+              )}
+            </div>
 
-      {/* COMMANDES */}
-      <section style={{ marginTop: 32 }}>
-        <div style={{ display: "flex", alignItems: "end", gap: 12, flexWrap: "wrap" }}>
-          <h2 style={{ margin: 0 }}>Commandes</h2>
-          <div style={{ marginLeft: "auto" }}>
-            <input
-              value={ordersQuery}
-              onChange={(e) => setOrdersQuery(e.target.value)}
-              placeholder="Rechercher (fournisseur, site, statut, n°)…"
-              style={{ padding: 8, minWidth: 300 }}
-            />
-          </div>
-        </div>
+            {/* Lignes + Réception */}
+            {activeOrderId && (
+              <div style={{ marginTop: 20 }}>
+                <h3>Lignes de la commande sélectionnée</h3>
 
-        {/* Créer une commande */}
-        <form onSubmit={createOrder} style={{ display: "grid", gap: 8, gridTemplateColumns: "1.5fr 1fr 1fr auto", alignItems: "end", marginTop: 10 }}>
-          <div>
-            <label>Fournisseur</label>
-            <select value={newOrderSupplierId} onChange={(e) => setNewOrderSupplierId(e.target.value)} style={{ width: "100%", padding: 8 }}>
-              <option value="">— choisir —</option>
-              {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label>Site de livraison</label>
-            {mySite ? (
-              <input value={mySite} disabled style={{ width: "100%", padding: 8, background: "#f7f7f7" }} />
-            ) : (
-              <select value={newOrderSite} onChange={(e) => setNewOrderSite(e.target.value)} style={{ width: "100%", padding: 8 }}>
-                <option value="">— choisir —</option>
-                {sites.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-              </select>
-            )}
-          </div>
-          <div>
-            <label>N° commande (opt.)</label>
-            <input value={newOrderExternalRef} onChange={(e) => setNewOrderExternalRef(e.target.value)} placeholder="ex: PO-2025-001" style={{ width: "100%", padding: 8 }} />
-          </div>
-          <button disabled={creatingOrder} style={{ padding: "10px 16px" }}>{creatingOrder ? "Création..." : "Créer commande"}</button>
-        </form>
+                {activeOrder?.status === "draft" ? (
+                  <form onSubmit={addOrderItem} style={{ display: "grid", gap: 8, gridTemplateColumns: "1.5fr 1fr 0.8fr 0.8fr auto", alignItems: "end" }}>
+                    <div>
+                      <label>Pièce</label>
+                      <select value={oiPartId} onChange={(e) => { setOiPartId(e.target.value); setOiSupplierRef(""); }} style={{ width: "100%", padding: 8 }}>
+                        <option value="">— choisir —</option>
+                        {parts.map(p => <option key={p.id} value={p.id}>{p.sku} — {p.label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label>Réf fournisseur (opt.)</label>
+                      <input value={oiSupplierRef} onChange={(e) => setOiSupplierRef(e.target.value)} placeholder="ex: X-789" style={{ width: "100%", padding: 8 }} />
+                    </div>
+                    <div>
+                      <label>Qté</label>
+                      <input type="number" step={1} min={1} value={oiQty}
+                             onChange={(e) => setOiQty(e.target.value)} placeholder="ex: 10" style={{ width: "100%", padding: 8 }} />
+                    </div>
+                    <div>
+                      <label>PU (EUR)</label>
+                      <input type="number" step="0.01" min={0} value={oiUnitPrice}
+                             onChange={(e) => setOiUnitPrice(e.target.value)} placeholder="ex: 12.50" style={{ width: "100%", padding: 8 }} />
+                    </div>
+                    <button disabled={addingItem} style={{ padding: "10px 16px" }}>{addingItem ? "Ajout..." : "Ajouter la ligne"}</button>
+                  </form>
+                ) : (
+                  <div style={{ marginTop: 12, opacity: 0.8 }}>Ajout de lignes désactivé (commande non “draft”).</div>
+                )}
 
-        {/* Liste des commandes */}
-        <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-          {ordersFiltered.map((o) => (
-            <div key={o.id}
-                 onClick={() => { setActiveOrderId(o.id); setReceiveSite(o.site || mySite || ""); }}
-                 style={{ border: "1px solid #eee", borderRadius: 8, padding: 12, cursor: "pointer",
-                          background: activeOrderId === o.id ? "#f0f7ff" : "white" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                <div><b>{o.supplier?.name || "—"}</b> · {o.site || "—"} {o.external_ref ? <> · <span>#{o.external_ref}</span></> : null}</div>
-                <div style={{ fontSize: 12, display: "flex", gap: 8, alignItems: "center" }}>
-                  <span style={{ opacity: 0.8 }}>{o.status}</span>
-                  {o.status === "draft" && (
-                    <button onClick={(e) => { e.stopPropagation(); setOrderStatus(o.id, "ordered"); }}>
-                      Passer en “ordered”
+                <div style={{ marginTop: 12 }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Pièce</th>
+                        <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Qté commandée</th>
+                        <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Déjà reçue</th>
+                        <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Restant</th>
+                        <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Réception (maintenant)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {orderItems.map(oi => {
+                        const rec = receivedByItem[oi.id] || 0;
+                        const remaining = Math.max((oi.qty || 0) - rec, 0);
+                        return (
+                          <tr key={oi.id}>
+                            <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{oi.part?.sku} — {oi.part?.label}</td>
+                            <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>{oi.qty}</td>
+                            <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>{rec}</td>
+                            <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>{remaining}</td>
+                            <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>
+                              <input
+                                type="number" step={1} min={0} max={remaining}
+                                value={toReceive[oi.id] || ""}
+                                onChange={(e) => setToReceive({ ...toReceive, [oi.id]: e.target.value })}
+                                placeholder="0"
+                                style={{ width: 90, padding: 6, textAlign: "right" }}
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {orderItems.length === 0 && (
+                        <tr><td colSpan={5} style={{ padding: 12, textAlign: "center", opacity: 0.7 }}>Aucune ligne pour l’instant.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ marginTop: 16, display: "grid", gap: 8, gridTemplateColumns: "1fr auto" }}>
+                  <div>
+                    <label>Site de réception</label>
+                    {mySite ? (
+                      <input value={mySite} disabled style={{ width: "100%", padding: 8, background: "#f7f7f7" }} />
+                    ) : (
+                      <input value={receiveSite} onChange={(e) => setReceiveSite(e.target.value)} placeholder="ex: Atelier A" style={{ width: "100%", padding: 8 }} />
+                    )}
+                    <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
+                      (si un site t’est assigné, il est appliqué automatiquement)
+                    </div>
+                  </div>
+                  <div style={{ alignSelf: "end" }}>
+                    <button onClick={createReceiptWithItems} style={{ padding: "10px 16px" }}>
+                      Enregistrer la réception
                     </button>
-                  )}
+                  </div>
                 </div>
               </div>
-              <div style={{ fontSize: 12, opacity: 0.8 }}>Créée le {fmtDate(o.created_at)}</div>
-            </div>
-          ))}
-          {ordersFiltered.length === 0 && (
-            <div style={{ padding: 16, border: "1px dashed #ddd", borderRadius: 8, textAlign: "center", opacity: .8 }}>
-              Aucune commande ne correspond à “{ordersQuery}”.
-            </div>
-          )}
-        </div>
-
-        {/* Lignes + Réception */}
-        {activeOrderId && (
-          <div style={{ marginTop: 20 }}>
-            <h3>Lignes de la commande sélectionnée</h3>
-
-            {/* Ajout de ligne si DRAFT */}
-            {activeOrder?.status === "draft" ? (
-              <form onSubmit={addOrderItem} style={{ display: "grid", gap: 8, gridTemplateColumns: "1.5fr 1fr 0.8fr 0.8fr auto", alignItems: "end" }}>
-                <div>
-                  <label>Pièce</label>
-                  <select value={oiPartId} onChange={(e) => { setOiPartId(e.target.value); setOiSupplierRef(""); }} style={{ width: "100%", padding: 8 }}>
-                    <option value="">— choisir —</option>
-                    {parts.map(p => <option key={p.id} value={p.id}>{p.sku} — {p.label}</option>)}
-                  </select>
-                  {oiPartId && bestOfferByPart[oiPartId] && (
-                    <div style={{ fontSize: 12, marginTop: 4, opacity: 0.8 }}>
-                      Suggestion prix : {bestOfferByPart[oiPartId]!.price.toFixed(2)} {bestOfferByPart[oiPartId]!.currency}
-                      {" · "} {bestOfferByPart[oiPartId]!.ref?.supplier?.name}
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label>Réf fournisseur (opt.)</label>
-                  <input value={oiSupplierRef} onChange={(e) => setOiSupplierRef(e.target.value)} placeholder="ex: X-789" style={{ width: "100%", padding: 8 }} />
-                </div>
-                <div>
-                  <label>Qté</label>
-                  <input type="number" step={1} min={1} value={oiQty}
-                         onChange={(e) => setOiQty(e.target.value)} placeholder="ex: 10" style={{ width: "100%", padding: 8 }} />
-                </div>
-                <div>
-                  <label>PU (EUR)</label>
-                  <input type="number" step="0.01" min={0} value={oiUnitPrice}
-                         onChange={(e) => setOiUnitPrice(e.target.value)} placeholder="ex: 12.50" style={{ width: "100%", padding: 8 }} />
-                </div>
-                <button disabled={addingItem} style={{ padding: "10px 16px" }}>{addingItem ? "Ajout..." : "Ajouter la ligne"}</button>
-              </form>
-            ) : (
-              <div style={{ marginTop: 12, opacity: 0.8 }}>Ajout de lignes désactivé (commande non “draft”).</div>
             )}
+          </section>
+        )}
 
-            {/* Tableau des lignes & restant */}
-            <div style={{ marginTop: 12 }}>
+        {/* ========== TRANSFERT ========== */}
+        {activeTab === "transfer" && (
+          <section>
+            <h2>Transfert de stock</h2>
+            <form onSubmit={doTransfer} style={{ display: "grid", gap: 8, gridTemplateColumns: "1.5fr 1fr 1fr 0.8fr auto", alignItems: "end" }}>
+              <div>
+                <label>Pièce</label>
+                <select value={transferPartId} onChange={(e) => setTransferPartId(e.target.value)} style={{ width: "100%", padding: 8 }}>
+                  <option value="">— choisir —</option>
+                  {parts.map(p => <option key={p.id} value={p.id}>{p.sku} — {p.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label>De</label>
+                <select value={transferFrom} onChange={(e) => setTransferFrom(e.target.value)} style={{ width: "100%", padding: 8 }}>
+                  <option value="">— site source —</option>
+                  {sites.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label>Vers</label>
+                <select value={transferTo} onChange={(e) => setTransferTo(e.target.value)} style={{ width: "100%", padding: 8 }}>
+                  <option value="">— site destination —</option>
+                  {sites.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label>Qté</label>
+                <input type="number" min={1} step={1} value={transferQty}
+                       onChange={(e) => setTransferQty(e.target.value)} placeholder="ex: 5" style={{ width: "100%", padding: 8 }} />
+              </div>
+              <button style={{ padding: "10px 16px" }}>Transférer</button>
+            </form>
+            <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>
+              (Le stock du site source diminue et celui du site destination augmente.)
+            </div>
+          </section>
+        )}
+
+        {/* ========== INVENTAIRE ========== */}
+        {activeTab === "inventory" && (
+          <section>
+            <h2>Inventaire (par site & pièce)</h2>
+            <div style={{ marginTop: 8 }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Site</th>
                     <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Pièce</th>
-                    <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Qté commandée</th>
-                    <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Déjà reçue</th>
-                    <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Restant</th>
-                    <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Réception (maintenant)</th>
+                    <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Stock</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>MAJ</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {orderItems.map(oi => {
-                    const rec = receivedByItem[oi.id] || 0;
-                    const remaining = Math.max((oi.qty || 0) - rec, 0);
+                  {inventory.map((row, i) => {
+                    const part = parts.find(p => p.id === row.part_id);
                     return (
-                      <tr key={oi.id}>
-                        <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{oi.part?.sku} — {oi.part?.label}</td>
-                        <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>{oi.qty}</td>
-                        <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>{rec}</td>
-                        <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>{remaining}</td>
-                        <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>
-                          <input
-                            type="number" step={1} min={0} max={remaining}
-                            value={toReceive[oi.id] || ""}
-                            onChange={(e) => setToReceive({ ...toReceive, [oi.id]: e.target.value })}
-                            placeholder="0"
-                            style={{ width: 90, padding: 6, textAlign: "right" }}
-                          />
-                        </td>
+                      <tr key={`${row.site}-${row.part_id}-${i}`}>
+                        <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{row.site}</td>
+                        <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{part ? `${part.sku} — ${part.label}` : row.part_id}</td>
+                        <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>{row.qty_on_hand}</td>
+                        <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{fmtDate(row.updated_at)}</td>
                       </tr>
                     );
                   })}
-                  {orderItems.length === 0 && (
-                    <tr><td colSpan={5} style={{ padding: 12, textAlign: "center", opacity: 0.7 }}>Aucune ligne pour l’instant.</td></tr>
+                  {inventory.length === 0 && (
+                    <tr><td colSpan={4} style={{ padding: 12, textAlign: "center", opacity: 0.7 }}>Aucun stock enregistré.</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
-
-            {/* Bloc Réception */}
-            <div style={{ marginTop: 16, display: "grid", gap: 8, gridTemplateColumns: "1fr auto" }}>
-              <div>
-                <label>Site de réception</label>
-                {mySite ? (
-                  <input value={mySite} disabled style={{ width: "100%", padding: 8, background: "#f7f7f7" }} />
-                ) : (
-                  <input value={receiveSite} onChange={(e) => setReceiveSite(e.target.value)} placeholder="ex: Atelier A" style={{ width: "100%", padding: 8 }} />
-                )}
-                <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
-                  (si un site t’est assigné, il est appliqué automatiquement)
-                </div>
-              </div>
-              <div style={{ alignSelf: "end" }}>
-                <button onClick={createReceiptWithItems} style={{ padding: "10px 16px" }}>
-                  Enregistrer la réception
-                </button>
-              </div>
-            </div>
-          </div>
+          </section>
         )}
-      </section>
 
-      {/* TRANSFERT */}
-      <section style={{ marginTop: 32 }}>
-        <h2>Transfert de stock</h2>
-        <form onSubmit={doTransfer} style={{ display: "grid", gap: 8, gridTemplateColumns: "1.5fr 1fr 1fr 0.8fr auto", alignItems: "end" }}>
-          <div>
-            <label>Pièce</label>
-            <select value={transferPartId} onChange={(e) => setTransferPartId(e.target.value)} style={{ width: "100%", padding: 8 }}>
-              <option value="">— choisir —</option>
-              {parts.map(p => <option key={p.id} value={p.id}>{p.sku} — {p.label}</option>)}
-            </select>
-          </div>
-          <div>
-            <label>De</label>
-            <select value={transferFrom} onChange={(e) => setTransferFrom(e.target.value)} style={{ width: "100%", padding: 8 }}>
-              <option value="">— site source —</option>
-              {sites.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label>Vers</label>
-            <select value={transferTo} onChange={(e) => setTransferTo(e.target.value)} style={{ width: "100%", padding: 8 }}>
-              <option value="">— site destination —</option>
-              {sites.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label>Qté</label>
-            <input type="number" min={1} step={1} value={transferQty}
-                   onChange={(e) => setTransferQty(e.target.value)} placeholder="ex: 5" style={{ width: "100%", padding: 8 }} />
-          </div>
-          <button style={{ padding: "10px 16px" }}>Transférer</button>
-        </form>
-        <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>
-          (Le stock du site source diminue et celui du site destination augmente.)
-        </div>
-      </section>
-
-      {/* INVENTAIRE */}
-      <section style={{ marginTop: 32 }}>
-        <h2>Inventaire (par site & pièce)</h2>
-        <div style={{ marginTop: 8 }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Site</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Pièce</th>
-                <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Stock</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>MAJ</th>
-              </tr>
-            </thead>
-            <tbody>
-              {inventory.map((row, i) => {
-                const part = parts.find(p => p.id === row.part_id);
-                return (
-                  <tr key={`${row.site}-${row.part_id}-${i}`}>
-                    <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{row.site}</td>
-                    <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{part ? `${part.sku} — ${part.label}` : row.part_id}</td>
-                    <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>{row.qty_on_hand}</td>
-                    <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{fmtDate(row.updated_at)}</td>
-                  </tr>
-                );
-              })}
-              {inventory.length === 0 && (
-                <tr><td colSpan={4} style={{ padding: 12, textAlign: "center", opacity: 0.7 }}>Aucun stock enregistré.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* ADMIN — AFFECTATION DES SITES */}
-      {isAdmin && (
-        <section style={{ marginTop: 40 }}>
-          <h2>Administration — Affectation des sites</h2>
-          <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 8 }}>
-            (Visible uniquement pour les admins, via RPC sécurisées)
-          </div>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Utilisateur</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Site actuel</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Nouveau site</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {allUsers.map(u => (
-                <tr key={u.id}>
-                  <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{u.email || u.id}</td>
-                  <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{u.site || "—"}</td>
-                  <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
-                    <select id={`site-${u.id}`} defaultValue={u.site || ""} style={{ padding: 6, minWidth: 180 }}>
-                      <option value="">— choisir —</option>
-                      {sites.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                    </select>
-                  </td>
-                  <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
-                    <button onClick={() => {
-                      const sel = (document.getElementById(`site-${u.id}`) as HTMLSelectElement);
-                      assignSite(u.id, sel.value);
-                    }}>
-                      Assigner
-                    </button>
-                  </td>
+        {/* ========== ADMINISTRATION (admins seulement) ========== */}
+        {activeTab === "admin" && isAdmin && (
+          <section>
+            <h2>Administration — Affectation des sites</h2>
+            <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 8 }}>
+              (Visible uniquement pour les admins, via RPC sécurisées)
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Utilisateur</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Site actuel</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Nouveau site</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}></th>
                 </tr>
-              ))}
-              {allUsers.length === 0 && (
-                <tr><td colSpan={4} style={{ padding: 12, opacity: 0.7 }}>Aucun utilisateur trouvé.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </section>
-      )}
+              </thead>
+              <tbody>
+                {allUsers.map(u => (
+                  <tr key={u.id}>
+                    <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{u.email || u.id}</td>
+                    <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{u.site || "—"}</td>
+                    <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
+                      <select id={`site-${u.id}`} defaultValue={u.site || ""} style={{ padding: 6, minWidth: 180 }}>
+                        <option value="">— choisir —</option>
+                        {sites.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
+                      <button onClick={() => {
+                        const sel = (document.getElementById(`site-${u.id}`) as HTMLSelectElement);
+                        assignSite(u.id, sel.value);
+                      }}>
+                        Assigner
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {allUsers.length === 0 && (
+                  <tr><td colSpan={4} style={{ padding: 12, opacity: 0.7 }}>Aucun utilisateur trouvé.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </section>
+        )}
+
+      </div>
 
       {/* TOASTS */}
       <Toasts items={toasts} onClose={dismiss} />
