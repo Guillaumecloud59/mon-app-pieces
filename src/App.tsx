@@ -266,6 +266,56 @@ export default function App() {
   setSiteName(""); setSiteNote("");
   await loadSites(); notify("Site ajouté", "success");
 }
+async function approvePendingRef(row: PendingRef) {
+  const partId = pendingPart[row.id];
+  if (!partId) { notify("Sélectionne une pièce.", "error"); return; }
+  const url = (pendingUrl[row.id] || "").trim() || null;
+
+  // 1) Créer la vraie référence fournisseur
+  const { error: insErr } = await supabase.from("supplier_part_refs").insert({
+    part_id: partId,
+    supplier_id: row.supplier_id,
+    supplier_ref: row.supplier_ref,
+    product_url: url,
+  });
+  if (insErr) return notify(insErr.message, "error");
+
+  // 2) Supprimer la demande
+  const { error: delErr } = await supabase.from("pending_refs").delete().eq("id", row.id);
+  if (delErr) return notify(delErr.message, "error");
+
+  // 3) 🔗 Auto-lier les lignes de commande orphelines qui ont cette réf + ce fournisseur
+  //    (order_items.part_id IS NULL) AND (order_items.supplier_ref = ref validée)
+  //    ET (order_items.order_id ∈ commandes du même supplier_id)
+  const { data: ordIdsData, error: ordErr } = await supabase
+    .from("orders")
+    .select("id")
+    .eq("supplier_id", row.supplier_id);
+
+  if (!ordErr && (ordIdsData?.length || 0) > 0) {
+    const ordIds = (ordIdsData || []).map(o => o.id);
+    const { data: updData, error: updErr } = await supabase
+      .from("order_items")
+      .update({ part_id: partId })
+      .in("order_id", ordIds)
+      .is("part_id", null)
+      .eq("supplier_ref", row.supplier_ref)
+      .select("id"); // pour compter
+
+    if (updErr) {
+      notify(`Réf validée. L’auto-liaison des lignes a échoué: ${updErr.message}`, "error");
+    } else {
+      const n = updData?.length || 0;
+      notify(`Référence validée. ${n} ligne${n>1?"s":""} de commande auto-liée${n>1?"s":""}.`, "success");
+      if (activeOrderId) await loadOrderItems(activeOrderId);
+    }
+  } else {
+    notify("Référence validée. Aucune commande concernée à relier.", "success");
+  }
+
+  await loadSupplierRefs();
+  await loadPendingRefs();
+}
 
 
   async function loadSupplierRefs() {
