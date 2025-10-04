@@ -184,6 +184,12 @@ export default function App() {
   const [invSortKey, setInvSortKey] = useState<InvSortKey>("site");
   const [invSortDir, setInvSortDir] = useState<"asc" | "desc">("asc");
 
+  // Groupes inventaire (pliés/dépliés)
+  const [invExpanded, setInvExpanded] = useState<Record<string, boolean>>({});
+  function toggleInvGroup(key: string) {
+    setInvExpanded(prev => ({ ...prev, [key]: !prev[key] }));
+  }
+
   /** ---------- Loaders ---------- */
   async function loadProfileAndMaybeUsers() {
     if (!session) return;
@@ -418,7 +424,7 @@ export default function App() {
       .single();
     if (recErr) return notify(recErr.message, "error");
 
-    // >>> IMPORTANT : on envoie état + emplacement pour chaque ligne
+    // >>> Envoi état + emplacement pour chaque ligne
     const payload = lines.map(l => ({
       receipt_id: receipt!.id,
       order_item_id: l.oi.id,
@@ -485,8 +491,50 @@ export default function App() {
     return { rows, totals };
   }, [inventory, parts, invSiteFilter, invCondFilter, invQuery, invSortKey, invSortDir]);
 
+  // Groupement par (site, part_id) avec sous-lignes par état
+  type InvGroup = {
+    key: string;
+    site: string;
+    part_id: string;
+    partSku: string;
+    partLabel: string;
+    totalQty: number;
+    rows: InventoryRow[];
+  };
+  const inventoryGrouped = useMemo<InvGroup[]>(() => {
+    const byKey: Record<string, InvGroup> = {};
+    for (const r of inventoryView.rows) {
+      const p = parts.find(pp => pp.id === r.part_id);
+      const key = `${r.site}|${r.part_id}`;
+      if (!byKey[key]) {
+        byKey[key] = {
+          key,
+          site: r.site,
+          part_id: r.part_id,
+          partSku: p?.sku ?? r.part_id,
+          partLabel: p?.label ?? "",
+          totalQty: 0,
+          rows: [],
+        };
+      }
+      byKey[key].rows.push(r);
+      byKey[key].totalQty += r.qty_on_hand || 0;
+    }
+    const groups = Object.values(byKey);
+    const dir = invSortDir === "asc" ? 1 : -1;
+    groups.sort((a, b) => {
+      if (invSortKey === "site") return dir * a.site.localeCompare(b.site);
+      if (invSortKey === "qty") return dir * (a.totalQty - b.totalQty);
+      const la = `${a.partSku} ${a.partLabel}`.trim();
+      const lb = `${b.partSku} ${b.partLabel}`.trim();
+      return dir * la.localeCompare(lb);
+    });
+    for (const g of groups) g.rows.sort((x, y) => x.condition.localeCompare(y.condition));
+    return groups;
+  }, [inventoryView.rows, parts, invSortKey, invSortDir]);
+
   async function updateInventoryLocation(row: InventoryRow, newLoc: string) {
-    // Tout utilisateur peut tenter, la RLS autorise pour son site (ou admin).
+    // RLS doit autoriser update pour l'user sur son site (ou admin).
     const { error } = await supabase
       .from("inventory")
       .update({ location: newLoc || null })
@@ -612,7 +660,9 @@ export default function App() {
                 <button disabled={loadingPart} style={{ padding: "10px 16px" }}>{loadingPart ? "Ajout..." : "Ajouter"}</button>
               </form>
               <ul style={{ padding: 0, listStyle: "none", marginTop: 12 }}>
-                {parts.filter(p => (p.sku + " " + p.label).toLowerCase().includes(partsQuery.trim().toLowerCase())).map((p) => (
+                {parts
+                  .filter(p => (p.sku + " " + p.label).toLowerCase().includes(partsQuery.trim().toLowerCase()))
+                  .map((p) => (
                   <li key={p.id} style={{ padding: 12, border: "1px solid #eee", marginBottom: 8, borderRadius: 8 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                       <div><b>{p.sku}</b> — {p.label}</div>
@@ -913,58 +963,86 @@ export default function App() {
               ))}
             </div>
 
-            {/* Tableau */}
+            {/* Tableau groupé par pièce (sous-menu états) */}
             <div style={{ marginTop: 8 }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
-                    {[
-                      ["site","Site"] as const,
-                      ["part","Pièce"] as const,
-                      ["condition","État"] as const,
-                      ["qty","Stock"] as const,
-                      ["location","Emplacement"] as const,
-                      ["updated","MAJ"] as const,
-                    ].map(([k,label]) => (
-                      <th key={k}
-                          onClick={() => { const kk = k as InvSortKey; setInvSortKey(kk); setInvSortDir(d => (invSortKey === kk ? (d==="asc"?"desc":"asc") : "asc")); }}
-                          style={{ textAlign: k==="qty" ? "right" : "left", borderBottom: "1px solid #eee", padding: 8, cursor: "pointer", userSelect: "none" }}>
-                        {label}{invSortKey===k ? (invSortDir==="asc" ? " ▲" : " ▼") : ""}
-                      </th>
-                    ))}
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8, width: 40 }}></th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Site</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Pièce</th>
+                    <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Total</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>État / Emplacement</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>MAJ</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {inventoryView.rows.map((row, i) => {
-                    const part = parts.find(p => p.id === row.part_id);
-                    const low = row.qty_on_hand <= 0;
+                  {inventoryGrouped.map(group => {
+                    const opened = !!invExpanded[group.key];
                     return (
-                      <tr key={`${row.site}-${row.part_id}-${row.condition}-${i}`} style={{ background: low ? "#fff7f7" : "transparent" }}>
-                        <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{row.site}</td>
-                        <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
-                          {part ? (<><b>{part.sku}</b> — {part.label}</>) : row.part_id}
+                      <tr key={group.key}>
+                        {/* LIGNE PARENTE */}
+                        <td style={{ borderBottom: "1px solid #eee", padding: 8, verticalAlign: "top" }}>
+                          <button
+                            onClick={() => toggleInvGroup(group.key)}
+                            aria-label={opened ? "Replier" : "Déplier"}
+                            style={{ border: "1px solid #e5e7eb", background: "white", borderRadius: 6, padding: "2px 8px", cursor: "pointer" }}
+                          >
+                            {opened ? "−" : "+"}
+                          </button>
                         </td>
-                        <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{CONDITION_LABEL[row.condition]}</td>
-                        <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>{row.qty_on_hand}</td>
-                        <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
-                          <input
-                            defaultValue={row.location ?? ""}
-                            onBlur={(e) => {
-                              const v = e.target.value.trim();
-                              if (v !== (row.location ?? "")) updateInventoryLocation(row, v);
-                            }}
-                            placeholder="ex: A-01-03"
-                            style={{ width: "100%", padding: 6 }}
-                          />
+                        <td style={{ borderBottom: "1px solid #eee", padding: 8, verticalAlign: "top" }}>{group.site}</td>
+                        <td style={{ borderBottom: "1px solid #eee", padding: 8, verticalAlign: "top" }}>
+                          <b>{group.partSku}</b> — {group.partLabel}
                         </td>
-                        <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{fmtDate(row.updated_at)}</td>
+                        <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right", verticalAlign: "top" }}>{group.totalQty}</td>
+                        <td style={{ borderBottom: "1px solid #eee", padding: 0 }} colSpan={2}>
+                          {/* sous-lignes */}
+                          {opened && (
+                            <table style={{ width: "100%" }}>
+                              <tbody>
+                                {group.rows.map((row, idx) => (
+                                  <tr key={`${group.key}-${row.condition}-${idx}`}>
+                                    <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, width: "30%" }}>
+                                      {CONDITION_LABEL[row.condition]}
+                                    </td>
+                                    <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, width: "15%", textAlign: "right" }}>
+                                      {row.qty_on_hand}
+                                    </td>
+                                    <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, width: "35%" }}>
+                                      <input
+                                        defaultValue={row.location ?? ""}
+                                        onBlur={(e) => {
+                                          const v = e.target.value.trim();
+                                          if (v !== (row.location ?? "")) updateInventoryLocation(row, v);
+                                        }}
+                                        placeholder="ex: A-01-03"
+                                        style={{ width: "100%", padding: 6 }}
+                                      />
+                                    </td>
+                                    <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, width: "20%" }}>
+                                      {fmtDate(row.updated_at)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                          {!opened && (
+                            <div style={{ padding: 8, color: "#6b7280" }}>
+                              {group.rows.length} état{group.rows.length>1 ? "s" : ""} — cliquer pour détail
+                            </div>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
-                  {inventoryView.rows.length === 0 && (
-                    <tr><td colSpan={6} style={{ padding: 12, textAlign: "center", opacity: 0.7 }}>
-                      Aucun résultat avec ces filtres.
-                    </td></tr>
+                  {inventoryGrouped.length === 0 && (
+                    <tr>
+                      <td colSpan={6} style={{ padding: 12, textAlign: "center", opacity: 0.7 }}>
+                        Aucun résultat avec ces filtres.
+                      </td>
+                    </tr>
                   )}
                 </tbody>
               </table>
