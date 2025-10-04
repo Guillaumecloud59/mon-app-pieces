@@ -178,8 +178,7 @@ export default function App() {
   const [oiSupplierRef, setOiSupplierRef] = useState("");
   const [oiQty, setOiQty] = useState("");
   const [oiUnitPrice, setOiUnitPrice] = useState("");
-  const [addingItem] = useState(false);
-
+  const [addingItem] = useState(false); // désactive bouton si besoin, sans setter
 
   /** ---- Inventaire (avec état + emplacement) ---- */
   const [inventory, setInventory] = useState<InventoryRow[]>([]);
@@ -198,9 +197,7 @@ export default function App() {
 
   // Groupes inventaire (pliés/dépliés)
   const [invExpanded, setInvExpanded] = useState<Record<string, boolean>>({});
-  function toggleInvGroup(key: string) {
-    setInvExpanded(prev => ({ ...prev, [key]: !prev[key] }));
-  }
+  function toggleInvGroup(key: string) { setInvExpanded(prev => ({ ...prev, [key]: !prev[key] })); }
 
   /** ---- À référencer (admin) ---- */
   const [pendingRefs, setPendingRefs] = useState<PendingRef[]>([]);
@@ -223,7 +220,7 @@ export default function App() {
     if (isAdm) {
       const { data } = await supabase.rpc("list_users");
       if (data) setAllUsers(data as any);
-      await loadPendingRefs(); // charger la file "À référencer" pour admin
+      await loadPendingRefs();
     }
   }
 
@@ -259,64 +256,13 @@ export default function App() {
     if (error) notify(error.message, "error"); else setSites((data || []) as SiteRow[]);
   }
   async function addSite(e: React.FormEvent) {
-  e.preventDefault();
-  if (!siteName.trim()) return;
-  const { error } = await supabase.from("sites").insert({ name: siteName.trim(), note: siteNote || null });
-  if (error) return notify(error.message, "error");
-  setSiteName(""); setSiteNote("");
-  await loadSites(); notify("Site ajouté", "success");
-}
-async function approvePendingRef(row: PendingRef) {
-  const partId = pendingPart[row.id];
-  if (!partId) { notify("Sélectionne une pièce.", "error"); return; }
-  const url = (pendingUrl[row.id] || "").trim() || null;
-
-  // 1) Créer la vraie référence fournisseur
-  const { error: insErr } = await supabase.from("supplier_part_refs").insert({
-    part_id: partId,
-    supplier_id: row.supplier_id,
-    supplier_ref: row.supplier_ref,
-    product_url: url,
-  });
-  if (insErr) return notify(insErr.message, "error");
-
-  // 2) Supprimer la demande
-  const { error: delErr } = await supabase.from("pending_refs").delete().eq("id", row.id);
-  if (delErr) return notify(delErr.message, "error");
-
-  // 3) 🔗 Auto-lier les lignes de commande orphelines qui ont cette réf + ce fournisseur
-  //    (order_items.part_id IS NULL) AND (order_items.supplier_ref = ref validée)
-  //    ET (order_items.order_id ∈ commandes du même supplier_id)
-  const { data: ordIdsData, error: ordErr } = await supabase
-    .from("orders")
-    .select("id")
-    .eq("supplier_id", row.supplier_id);
-
-  if (!ordErr && (ordIdsData?.length || 0) > 0) {
-    const ordIds = (ordIdsData || []).map(o => o.id);
-    const { data: updData, error: updErr } = await supabase
-      .from("order_items")
-      .update({ part_id: partId })
-      .in("order_id", ordIds)
-      .is("part_id", null)
-      .eq("supplier_ref", row.supplier_ref)
-      .select("id"); // pour compter
-
-    if (updErr) {
-      notify(`Réf validée. L’auto-liaison des lignes a échoué: ${updErr.message}`, "error");
-    } else {
-      const n = updData?.length || 0;
-      notify(`Référence validée. ${n} ligne${n>1?"s":""} de commande auto-liée${n>1?"s":""}.`, "success");
-      if (activeOrderId) await loadOrderItems(activeOrderId);
-    }
-  } else {
-    notify("Référence validée. Aucune commande concernée à relier.", "success");
+    e.preventDefault();
+    if (!siteName.trim()) return;
+    const { error } = await supabase.from("sites").insert({ name: siteName.trim(), note: siteNote || null });
+    if (error) return notify(error.message, "error");
+    setSiteName(""); setSiteNote("");
+    await loadSites(); notify("Site ajouté", "success");
   }
-
-  await loadSupplierRefs();
-  await loadPendingRefs();
-}
-
 
   async function loadSupplierRefs() {
     const { data, error } = await supabase
@@ -350,20 +296,6 @@ async function approvePendingRef(row: PendingRef) {
                  supplier:suppliers(id, name, site_url))`)
       .order("noted_at", { ascending: false });
     if (error) notify(error.message, "error"); else setOffers((data || []) as any);
-  }
-  async function addOffer(e: React.FormEvent) {
-    e.preventDefault();
-    if (!offerRefId || offerPrice === "") return;
-    const priceNumber = Number(offerPrice);
-    if (!Number.isFinite(priceNumber) || priceNumber < 0) return notify("Prix invalide", "error");
-    const qtyNumber = offerQty === "" ? null : Number(offerQty);
-    if (qtyNumber !== null && (!Number.isFinite(qtyNumber) || qtyNumber < 0)) return notify("Quantité invalide", "error");
-
-    setLoadingOffer(true);
-    const { error } = await supabase.from("offers").insert({ supplier_part_ref_id: offerRefId, price: priceNumber, qty_available: qtyNumber });
-    setLoadingOffer(false);
-    if (error) return notify(error.message, "error");
-    setOfferPrice(""); setOfferQty(""); await loadOffers(); notify("Offre enregistrée", "success");
   }
 
   async function loadOrders() {
@@ -407,7 +339,7 @@ async function approvePendingRef(row: PendingRef) {
     } else setReceivedByItem({});
   }
 
-  // ---- À référencer (admin only visible via RLS) ----
+  // ---- À référencer (admin visible via RLS) ----
   async function loadPendingRefs() {
     const { data, error } = await supabase
       .from("pending_refs")
@@ -429,7 +361,6 @@ async function approvePendingRef(row: PendingRef) {
     const partId = pendingPart[row.id];
     if (!partId) { notify("Sélectionne une pièce.", "error"); return; }
     const url = (pendingUrl[row.id] || "").trim() || null;
-    // note conservée dans pending (tu peux la journaliser ailleurs si besoin)
 
     const { error: insErr } = await supabase.from("supplier_part_refs").insert({
       part_id: partId,
@@ -442,79 +373,97 @@ async function approvePendingRef(row: PendingRef) {
     const { error: delErr } = await supabase.from("pending_refs").delete().eq("id", row.id);
     if (delErr) return notify(delErr.message, "error");
 
-    notify("Référence validée et ajoutée.", "success");
+    // Auto-lier lignes de commandes orphelines
+    const { data: ordIdsData, error: ordErr } = await supabase
+      .from("orders")
+      .select("id")
+      .eq("supplier_id", row.supplier_id);
+
+    if (!ordErr && (ordIdsData?.length || 0) > 0) {
+      const ordIds = (ordIdsData || []).map(o => o.id);
+      const { data: updData, error: updErr } = await supabase
+        .from("order_items")
+        .update({ part_id: partId })
+        .in("order_id", ordIds)
+        .is("part_id", null)
+        .eq("supplier_ref", row.supplier_ref)
+        .select("id");
+
+      if (updErr) {
+        notify(`Réf validée. Auto-liaison échouée: ${updErr.message}`, "error");
+      } else {
+        const n = updData?.length || 0;
+        notify(`Référence validée. ${n} ligne${n>1?"s":""} auto-liée${n>1?"s":""}.`, "success");
+        if (activeOrderId) await loadOrderItems(activeOrderId);
+      }
+    } else {
+      notify("Référence validée. Aucune commande concernée à relier.", "success");
+    }
+
     await loadSupplierRefs();
     await loadPendingRefs();
   }
 
   async function addOrderItem(e: React.FormEvent) {
-  e.preventDefault();
-  if (!activeOrderId) return;
+    e.preventDefault();
+    if (!activeOrderId) return;
 
-  const qtyNumber = Number(oiQty);
-  if (!Number.isFinite(qtyNumber) || qtyNumber <= 0) return notify("La quantité doit être > 0", "error");
-  const unitPriceNumber = oiUnitPrice === "" ? null : Number(oiUnitPrice);
-  if (unitPriceNumber !== null && (!Number.isFinite(unitPriceNumber) || unitPriceNumber < 0)) return notify("Prix unitaire invalide", "error");
+    const qtyNumber = Number(oiQty);
+    if (!Number.isFinite(qtyNumber) || qtyNumber <= 0) return notify("La quantité doit être > 0", "error");
+    const unitPriceNumber = oiUnitPrice === "" ? null : Number(oiUnitPrice);
+    if (unitPriceNumber !== null && (!Number.isFinite(unitPriceNumber) || unitPriceNumber < 0)) return notify("Prix unitaire invalide", "error");
 
-  // Auto par réf fournisseur si saisie
-  let partIdToUse = oiPartId;
+    let partIdToUse = oiPartId;
 
-  if (!partIdToUse && oiSupplierRef.trim()) {
-    if (!newOrderSupplierId) return notify("Sélectionne un fournisseur pour utiliser la réf fournisseur.", "error");
+    if (!partIdToUse && oiSupplierRef.trim()) {
+      if (!newOrderSupplierId) return notify("Sélectionne un fournisseur pour utiliser la réf fournisseur.", "error");
 
-    // Chercher la réf chez ce fournisseur
-    const { data: foundRef, error: findErr } = await supabase
-      .from("supplier_part_refs")
-      .select("id, part_id")
-      .eq("supplier_id", newOrderSupplierId)
-      .eq("supplier_ref", oiSupplierRef.trim())
-      .maybeSingle();
+      const { data: foundRef, error: findErr } = await supabase
+        .from("supplier_part_refs")
+        .select("id, part_id")
+        .eq("supplier_id", newOrderSupplierId)
+        .eq("supplier_ref", oiSupplierRef.trim())
+        .maybeSingle();
+      if (findErr) return notify(findErr.message, "error");
 
-    if (findErr) return notify(findErr.message, "error");
+      if (foundRef?.part_id) {
+        partIdToUse = foundRef.part_id as string;
+      } else {
+        await createPendingRef(newOrderSupplierId, oiSupplierRef);
+        notify("Réf inconnue : ajoutée à « À référencer » (admin).", "info");
 
-    if (foundRef?.part_id) {
-      // Réf connue -> on lie la pièce
-      partIdToUse = foundRef.part_id as string;
-    } else {
-      // Réf inconnue -> créer une entrée "À référencer" (admin)
-      await createPendingRef(newOrderSupplierId, oiSupplierRef);
-      notify("Réf inconnue : ajoutée à « À référencer » (admin).", "info");
+        const { error: insErr } = await supabase.from("order_items").insert({
+          order_id: activeOrderId,
+          part_id: null,
+          supplier_ref: oiSupplierRef,
+          qty: qtyNumber,
+          unit_price: unitPriceNumber,
+          currency: "EUR",
+        });
+        if (insErr) return notify(insErr.message, "error");
 
-      // 👉 ET on ajoute quand même la ligne de commande avec part_id = NULL
-      const { error: insErr } = await supabase.from("order_items").insert({
-        order_id: activeOrderId,
-        part_id: null,                    // pas encore renseignée
-        supplier_ref: oiSupplierRef,      // on garde la réf
-        qty: qtyNumber,
-        unit_price: unitPriceNumber,
-        currency: "EUR",
-      });
-      if (insErr) return notify(insErr.message, "error");
-
-      setOiPartId(""); setOiSupplierRef(""); setOiQty(""); setOiUnitPrice("");
-      await loadOrderItems(activeOrderId);
-      return notify("Ligne ajoutée (pièce à référencer).", "success");
+        setOiPartId(""); setOiSupplierRef(""); setOiQty(""); setOiUnitPrice("");
+        await loadOrderItems(activeOrderId);
+        return notify("Ligne ajoutée (pièce à référencer).", "success");
+      }
     }
+
+    if (!partIdToUse) return notify("Choisis une pièce ou saisis une réf fournisseur.", "error");
+
+    const { error } = await supabase.from("order_items").insert({
+      order_id: activeOrderId,
+      part_id: partIdToUse,
+      supplier_ref: oiSupplierRef || null,
+      qty: qtyNumber,
+      unit_price: unitPriceNumber,
+      currency: "EUR",
+    });
+    if (error) return notify(error.message, "error");
+
+    setOiPartId(""); setOiSupplierRef(""); setOiQty(""); setOiUnitPrice("");
+    await loadOrderItems(activeOrderId);
+    notify("Ligne ajoutée", "success");
   }
-
-  // Cas normal : on a une pièce (sélectionnée ou trouvée automatiquement)
-  if (!partIdToUse) return notify("Choisis une pièce ou saisis une réf fournisseur.", "error");
-
-  const { error } = await supabase.from("order_items").insert({
-    order_id: activeOrderId,
-    part_id: partIdToUse,
-    supplier_ref: oiSupplierRef || null,
-    qty: qtyNumber,
-    unit_price: unitPriceNumber,
-    currency: "EUR",
-  });
-  if (error) return notify(error.message, "error");
-
-  setOiPartId(""); setOiSupplierRef(""); setOiQty(""); setOiUnitPrice("");
-  await loadOrderItems(activeOrderId);
-  notify("Ligne ajoutée", "success");
-}
-
   async function setOrderStatus(orderId: string, next: "draft" | "ordered") {
     const { error } = await supabase.from("orders").update({ status: next }).eq("id", orderId);
     if (error) notify(error.message, "error"); else { await loadOrders(); notify(`Commande → ${next}`, "success"); }
@@ -586,7 +535,6 @@ async function approvePendingRef(row: PendingRef) {
       .single();
     if (recErr) return notify(recErr.message, "error");
 
-    // Envoi état + emplacement
     const payload = lines.map(l => ({
       receipt_id: receipt!.id,
       order_item_id: l.oi.id,
@@ -608,13 +556,7 @@ async function approvePendingRef(row: PendingRef) {
   function matchesQuery(row: InventoryRow, q: string) {
     if (!q) return true;
     const part = parts.find(p => p.id === row.part_id);
-    const hay = [
-      row.site,
-      row.part_id,
-      part?.sku ?? "",
-      part?.label ?? "",
-      row.location ?? ""
-    ].join(" ").toLowerCase();
+    const hay = [row.site, row.part_id, part?.sku ?? "", part?.label ?? "", row.location ?? ""].join(" ").toLowerCase();
     return hay.includes(q.toLowerCase());
   }
 
@@ -735,15 +677,15 @@ async function approvePendingRef(row: PendingRef) {
     loadProfileAndMaybeUsers();
     loadParts(); loadSuppliers(); loadSupplierRefs(); loadOffers();
     loadOrders(); loadInventory(); loadSites();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
   useEffect(() => {
     if (activeOrderId) { loadOrderItems(activeOrderId); setReceiveSite(activeOrder?.site || mySite || ""); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrderId]);
 
-  /** ---------- Tabs list (no hook) ---------- */
+  /** ---------- Tabs list ---------- */
   const tabs: { key: TabKey; label: string }[] = (() => {
     const base: { key: TabKey; label: string }[] = [
       { key: "db",        label: "Base de données" },
@@ -862,7 +804,7 @@ async function approvePendingRef(row: PendingRef) {
             {/* Offres */}
             <section style={{ marginTop: 32 }}>
               <h2>Offres (prix / stock){offers ? ` (${offers.length})` : ""}</h2>
-              <form onSubmit={addOffer} style={{ display: "grid", gap: 8, gridTemplateColumns: "1.2fr 1.8fr 1fr 1fr auto", alignItems: "end" }}>
+              <form onSubmit={() => {}} style={{ display: "grid", gap: 8, gridTemplateColumns: "1.2fr 1.8fr 1fr 1fr auto", alignItems: "end" }}>
                 <div><label>Pièce</label>
                   <select value={offerPartId} onChange={(e) => { setOfferPartId(e.target.value); setOfferRefId(""); }} style={{ width: "100%", padding: 8 }}>
                     <option value="">— choisir —</option>
@@ -885,7 +827,19 @@ async function approvePendingRef(row: PendingRef) {
                 <div><label>Qté dispo (opt.)</label>
                   <input type="number" step={1} min={0} value={offerQty} onChange={(e) => setOfferQty(e.target.value)} placeholder="ex: 30" style={{ width: "100%", padding: 8 }} />
                 </div>
-                <button disabled={loadingOffer} style={{ padding: "10px 16px" }}>{loadingOffer ? "Ajout..." : "Enregistrer"}</button>
+                <button onClick={async (e) => {
+                  e.preventDefault();
+                  if (!offerRefId || offerPrice === "") return;
+                  const priceNumber = Number(offerPrice);
+                  if (!Number.isFinite(priceNumber) || priceNumber < 0) return notify("Prix invalide", "error");
+                  const qtyNumber = offerQty === "" ? null : Number(offerQty);
+                  if (qtyNumber !== null && (!Number.isFinite(qtyNumber) || qtyNumber < 0)) return notify("Quantité invalide", "error");
+                  setLoadingOffer(true);
+                  const { error } = await supabase.from("offers").insert({ supplier_part_ref_id: offerRefId, price: priceNumber, qty_available: qtyNumber });
+                  setLoadingOffer(false);
+                  if (error) return notify(error.message, "error");
+                  setOfferPrice(""); setOfferQty(""); await loadOffers(); notify("Offre enregistrée", "success");
+                }} style={{ padding: "10px 16px" }}>{loadingOffer ? "Ajout..." : "Enregistrer"}</button>
               </form>
             </section>
           </>
@@ -1007,7 +961,9 @@ async function approvePendingRef(row: PendingRef) {
                         const existingLoc = knownLocationBySitePart[locKey];
                         return (
                           <tr key={oi.id}>
-                            <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{oi.part?.sku} — {oi.part?.label}</td>
+                            <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
+                              {oi.part ? (<>{oi.part?.sku} — {oi.part?.label}</>) : (<span style={{ color:"#a00" }}>À référencer</span>)}
+                            </td>
                             <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>{oi.qty}</td>
                             <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>{rec}</td>
                             <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>{remaining}</td>
