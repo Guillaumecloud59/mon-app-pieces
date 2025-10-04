@@ -35,6 +35,17 @@ type InventoryRow = {
 };
 type SiteRow = { id: string; name: string; note?: string | null; created_at: string };
 
+type PendingRef = {
+  id: string;
+  supplier_id: string;
+  supplier_ref: string;
+  product_url?: string | null;
+  note?: string | null;
+  created_by: string;
+  created_at: string;
+  supplier?: Supplier | null;
+};
+
 /** ---------- Mini toasts ---------- */
 type ToastKind = "success" | "error" | "info";
 type Toast = { id: string; kind: ToastKind; text: string };
@@ -184,12 +195,17 @@ export default function App() {
   const [invSortKey] = useState<InvSortKey>("site");
   const [invSortDir] = useState<"asc" | "desc">("asc");
 
-
   // Groupes inventaire (pliés/dépliés)
   const [invExpanded, setInvExpanded] = useState<Record<string, boolean>>({});
   function toggleInvGroup(key: string) {
     setInvExpanded(prev => ({ ...prev, [key]: !prev[key] }));
   }
+
+  /** ---- À référencer (admin) ---- */
+  const [pendingRefs, setPendingRefs] = useState<PendingRef[]>([]);
+  const [pendingNote, setPendingNote] = useState<Record<string, string>>({});
+  const [pendingUrl, setPendingUrl] = useState<Record<string, string>>({});
+  const [pendingPart, setPendingPart] = useState<Record<string, string>>({});
 
   /** ---------- Loaders ---------- */
   async function loadProfileAndMaybeUsers() {
@@ -206,6 +222,7 @@ export default function App() {
     if (isAdm) {
       const { data } = await supabase.rpc("list_users");
       if (data) setAllUsers(data as any);
+      await loadPendingRefs(); // charger la file "À référencer" pour admin
     }
   }
 
@@ -241,7 +258,7 @@ export default function App() {
     if (error) notify(error.message, "error"); else setSites((data || []) as SiteRow[]);
   }
   async function addSite(e: React.FormEvent) {
-    e.preventDefault(); if (!siteName.trim()) return;
+    e.preventiventDefault(); if (!siteName.trim()) return;
     const { error } = await supabase.from("sites").insert({ name: siteName.trim(), note: siteNote || null });
     if (error) return notify(error.message, "error");
     setSiteName(""); setSiteNote("");
@@ -336,23 +353,94 @@ export default function App() {
       setReceivedByItem(map);
     } else setReceivedByItem({});
   }
+
+  // ---- À référencer (admin only visible via RLS) ----
+  async function loadPendingRefs() {
+    const { data, error } = await supabase
+      .from("pending_refs")
+      .select(`id, supplier_id, supplier_ref, product_url, note, created_by, created_at,
+               supplier:suppliers(id, name, site_url)`)
+      .order("created_at", { ascending: false });
+    if (error) { notify(error.message, "error"); return; }
+    setPendingRefs((data || []) as any);
+  }
+  async function createPendingRef(supplierId: string, supplierRefVal: string) {
+    const { error } = await supabase.from("pending_refs").insert({
+      supplier_id: supplierId,
+      supplier_ref: supplierRefVal.trim(),
+      created_by: session!.user.id,
+    });
+    if (error) notify(error.message, "error");
+  }
+  async function approvePendingRef(row: PendingRef) {
+    const partId = pendingPart[row.id];
+    if (!partId) { notify("Sélectionne une pièce.", "error"); return; }
+    const url = (pendingUrl[row.id] || "").trim() || null;
+    // note conservée dans pending (tu peux la journaliser ailleurs si besoin)
+
+    const { error: insErr } = await supabase.from("supplier_part_refs").insert({
+      part_id: partId,
+      supplier_id: row.supplier_id,
+      supplier_ref: row.supplier_ref,
+      product_url: url,
+    });
+    if (insErr) return notify(insErr.message, "error");
+
+    const { error: delErr } = await supabase.from("pending_refs").delete().eq("id", row.id);
+    if (delErr) return notify(delErr.message, "error");
+
+    notify("Référence validée et ajoutée.", "success");
+    await loadSupplierRefs();
+    await loadPendingRefs();
+  }
+
   async function addOrderItem(e: React.FormEvent) {
     e.preventDefault();
-    if (!activeOrderId || !oiPartId) return;
+    if (!activeOrderId) return;
+
     const qtyNumber = Number(oiQty);
     if (!Number.isFinite(qtyNumber) || qtyNumber <= 0) return notify("La quantité doit être > 0", "error");
     const unitPriceNumber = oiUnitPrice === "" ? null : Number(oiUnitPrice);
     if (unitPriceNumber !== null && (!Number.isFinite(unitPriceNumber) || unitPriceNumber < 0)) return notify("Prix unitaire invalide", "error");
 
-    setAddingItem(true);
+    // Auto par réf fournisseur si saisie
+    let partIdToUse = oiPartId;
+    if (!partIdToUse && oiSupplierRef.trim()) {
+      if (!newOrderSupplierId) return notify("Sélectionne un fournisseur pour utiliser la réf fournisseur.", "error");
+
+      const { data: foundRef, error: findErr } = await supabase
+        .from("supplier_part_refs")
+        .select("id, part_id")
+        .eq("supplier_id", newOrderSupplierId)
+        .eq("supplier_ref", oiSupplierRef.trim())
+        .maybeSingle();
+      if (findErr) return notify(findErr.message, "error");
+
+      if (foundRef?.part_id) {
+        partIdToUse = foundRef.part_id as string;
+      } else {
+        await createPendingRef(newOrderSupplierId, oiSupplierRef);
+        notify("Réf inconnue : ajoutée à « À référencer » (admin).", "info");
+        setOiSupplierRef(""); setOiQty(""); setOiUnitPrice("");
+        return; // pas d'insert de ligne tant que non référencée
+      }
+    }
+
+    if (!partIdToUse) return notify("Choisis une pièce ou saisis une réf fournisseur existante.", "error");
+
     const { error } = await supabase.from("order_items").insert({
-      order_id: activeOrderId, part_id: oiPartId, supplier_ref: oiSupplierRef || null,
-      qty: qtyNumber, unit_price: unitPriceNumber, currency: "EUR",
+      order_id: activeOrderId,
+      part_id: partIdToUse,
+      supplier_ref: oiSupplierRef || null,
+      qty: qtyNumber,
+      unit_price: unitPriceNumber,
+      currency: "EUR",
     });
-    setAddingItem(false);
     if (error) return notify(error.message, "error");
+
     setOiPartId(""); setOiSupplierRef(""); setOiQty(""); setOiUnitPrice("");
-    await loadOrderItems(activeOrderId); notify("Ligne ajoutée", "success");
+    await loadOrderItems(activeOrderId);
+    notify("Ligne ajoutée", "success");
   }
   async function setOrderStatus(orderId: string, next: "draft" | "ordered") {
     const { error } = await supabase.from("orders").update({ status: next }).eq("id", orderId);
@@ -425,7 +513,7 @@ export default function App() {
       .single();
     if (recErr) return notify(recErr.message, "error");
 
-    // >>> Envoi état + emplacement pour chaque ligne
+    // Envoi état + emplacement
     const payload = lines.map(l => ({
       receipt_id: receipt!.id,
       order_item_id: l.oi.id,
@@ -535,7 +623,6 @@ export default function App() {
   }, [inventoryView.rows, parts, invSortKey, invSortDir]);
 
   async function updateInventoryLocation(row: InventoryRow, newLoc: string) {
-    // RLS doit autoriser update pour l'user sur son site (ou admin).
     const { error } = await supabase
       .from("inventory")
       .update({ location: newLoc || null })
@@ -804,12 +891,12 @@ export default function App() {
                 {activeOrder?.status === "draft" ? (
                   <form onSubmit={addOrderItem} style={{ display: "grid", gap: 8, gridTemplateColumns: "1.5fr 1fr 0.8fr 0.8fr auto", alignItems: "end" }}>
                     <div><label>Pièce</label>
-                      <select value={oiPartId} onChange={(e) => { setOiPartId(e.target.value); setOiSupplierRef(""); }} style={{ width: "100%", padding: 8 }}>
+                      <select value={oiPartId} onChange={(e) => { setOiPartId(e.target.value); }} style={{ width: "100%", padding: 8 }}>
                         <option value="">— choisir —</option>
                         {parts.map(p => <option key={p.id} value={p.id}>{p.sku} — {p.label}</option>)}
                       </select>
                     </div>
-                    <div><label>Réf fournisseur (opt.)</label>
+                    <div><label>Réf fournisseur</label>
                       <input value={oiSupplierRef} onChange={(e) => setOiSupplierRef(e.target.value)} placeholder="ex: X-789" style={{ width: "100%", padding: 8 }} />
                     </div>
                     <div><label>Qté</label>
@@ -1130,6 +1217,71 @@ export default function App() {
                 ))}
                 {suppliers.length === 0 && <li style={{ padding: 12, opacity: 0.7 }}>Aucun fournisseur pour l’instant.</li>}
               </ul>
+            </div>
+
+            {/* À référencer (admin) */}
+            <div style={{ marginTop: 28 }}>
+              <h3>À référencer</h3>
+              <p style={{ marginTop: -4, opacity: 0.8 }}>Références fournisseur saisies en commande mais inconnues.</p>
+
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Fournisseur</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Réf fournisseur</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8, minWidth: 260 }}>Pièce</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8, minWidth: 220 }}>URL produit (opt.)</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Note (opt.)</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingRefs.map(row => (
+                    <tr key={row.id}>
+                      <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
+                        {row.supplier?.name || row.supplier_id}
+                      </td>
+                      <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
+                        <code>{row.supplier_ref}</code>
+                      </td>
+                      <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
+                        <select
+                          value={pendingPart[row.id] || ""}
+                          onChange={(e) => setPendingPart({ ...pendingPart, [row.id]: e.target.value })}
+                          style={{ padding: 6, width: "100%" }}
+                        >
+                          <option value="">— choisir une pièce —</option>
+                          {parts.map(p => (
+                            <option key={p.id} value={p.id}>{p.sku} — {p.label}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
+                        <input
+                          value={pendingUrl[row.id] ?? (row.product_url || "")}
+                          onChange={(e) => setPendingUrl({ ...pendingUrl, [row.id]: e.target.value })}
+                          placeholder="https://..."
+                          style={{ width: "100%", padding: 6 }}
+                        />
+                      </td>
+                      <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
+                        <input
+                          value={pendingNote[row.id] ?? (row.note || "")}
+                          onChange={(e) => setPendingNote({ ...pendingNote, [row.id]: e.target.value })}
+                          placeholder="Notes internes…"
+                          style={{ width: "100%", padding: 6 }}
+                        />
+                      </td>
+                      <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
+                        <button onClick={() => approvePendingRef(row)}>Valider</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {pendingRefs.length === 0 && (
+                    <tr><td colSpan={6} style={{ padding: 12, opacity: 0.7 }}>Aucune demande pour l’instant.</td></tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </section>
         )}
