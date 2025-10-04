@@ -6,50 +6,30 @@ import { supabase } from "./lib/supabase";
 type Part = { id: string; sku: string; label: string; created_at?: string };
 type Supplier = { id: string; name: string; site_url?: string | null; created_at?: string };
 type SupplierRef = {
-  id: string;
-  part_id: string;
-  supplier_id: string;
-  supplier_ref: string;
-  product_url?: string | null;
-  created_at?: string;
-  part?: Part;
-  supplier?: Supplier;
+  id: string; part_id: string; supplier_id: string; supplier_ref: string;
+  product_url?: string | null; created_at?: string; part?: Part; supplier?: Supplier;
 };
 type Offer = {
-  id: number;
-  supplier_part_ref_id: string;
-  price: number;
-  currency: string;
-  qty_available?: number | null;
-  noted_at: string;
+  id: number; supplier_part_ref_id: string; price: number; currency: string;
+  qty_available?: number | null; noted_at: string;
   ref?: SupplierRef & { supplier?: Supplier; part?: Part };
 };
 type Order = {
-  id: string;
-  supplier_id?: string | null;
-  site?: string | null;
+  id: string; supplier_id?: string | null; site?: string | null;
   status: "draft" | "ordered" | "partially_received" | "received" | "cancelled";
-  external_ref?: string | null;
-  ordered_at?: string | null;
-  created_at: string;
+  external_ref?: string | null; ordered_at?: string | null; created_at: string;
   supplier?: Supplier | null;
 };
 type OrderItem = {
-  id: string;
-  order_id: string;
-  part_id: string | null;
-  supplier_ref?: string | null;
-  qty: number;
-  unit_price?: number | null;
-  currency?: string | null;
-  created_at?: string;
+  id: string; order_id: string; part_id: string | null; supplier_ref?: string | null;
+  qty: number; unit_price?: number | null; currency?: string | null; created_at?: string;
   part?: Part | null;
 };
 type InventoryRow = { site: string; part_id: string; qty_on_hand: number; updated_at: string };
 type SiteRow = { id: string; name: string; note?: string | null; created_at: string };
 
 export default function App() {
-  /** ----------------------- AUTH ----------------------- **/
+  /** ---------------- AUTH (déclaré en premier) ---------------- */
   const [session, setSession] = useState<Session | null>(null);
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
@@ -59,19 +39,12 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     supabase.auth.getSession().then(({ data }) => {
-      if (!cancelled) {
-        setSession(data.session);
-        setAuthReady(true);
-      }
+      if (!cancelled) { setSession(data.session); setAuthReady(true); }
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
-      setSession(sess);
-      setAuthReady(true);
+      setSession(sess); setAuthReady(true);
     });
-    return () => {
-      cancelled = true;
-      sub.subscription.unsubscribe();
-    };
+    return () => { cancelled = true; sub.subscription.unsubscribe(); };
   }, []);
 
   async function signInWithPassword(e: React.FormEvent) {
@@ -93,39 +66,7 @@ export default function App() {
   }
   async function signOut() { await supabase.auth.signOut(); }
 
-  if (!authReady) {
-    return <div style={{ maxWidth: 480, margin: "10vh auto", padding: 24 }}>Chargement…</div>;
-  }
-  if (!session) {
-    return (
-      <div style={{ maxWidth: 480, margin: "10vh auto", padding: 24 }}>
-        <h1>Connexion</h1>
-        <form onSubmit={signInWithPassword} style={{ display: "grid", gap: 12 }}>
-          <div>
-            <label>Email</label>
-            <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)}
-                   placeholder="vous@exemple.com" style={{ width: "100%", padding: 10 }} />
-          </div>
-          <div>
-            <label>Mot de passe</label>
-            <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)}
-                   placeholder="••••••••" style={{ width: "100%", padding: 10 }} />
-          </div>
-          <button disabled={authLoading} style={{ padding: "10px 16px" }}>
-            {authLoading ? "Connexion..." : "Se connecter"}
-          </button>
-          <button onClick={signUp} type="button" style={{ padding: "10px 16px" }}>
-            Créer un compte
-          </button>
-        </form>
-        <div style={{ marginTop: 16, fontSize: 12, opacity: 0.7 }}>
-          (Vérifie dans Supabase Auth : Email activé + Redirect URLs. Pour tests, tu peux désactiver “Confirm email”.)
-        </div>
-      </div>
-    );
-  }
-
-  /** ----------------------- ÉTATS APP ----------------------- **/
+  /** --------------- ÉTATS APP (toujours déclarés avant tout return) --------------- */
   // Pièces
   const [sku, setSku] = useState(""); const [label, setLabel] = useState("");
   const [parts, setParts] = useState<Part[]>([]); const [loadingPart, setLoadingPart] = useState(false);
@@ -175,11 +116,10 @@ export default function App() {
   const [transferTo, setTransferTo] = useState("");
   const [transferQty, setTransferQty] = useState("");
 
-  /** ----------------------- LOADERS ----------------------- **/
+  /** ---------------- LOADERS (gérés pour ne tourner qu’une fois loggé) ---------------- */
   async function loadParts() {
     const { data, error } = await supabase.from("parts").select("*").order("created_at", { ascending: false });
-    if (error) return console.error(error);
-    setParts((data || []) as Part[]);
+    if (!error) setParts((data || []) as Part[]);
   }
   async function addPart(e: React.FormEvent) {
     e.preventDefault();
@@ -193,8 +133,7 @@ export default function App() {
 
   async function loadSuppliers() {
     const { data, error } = await supabase.from("suppliers").select("*").order("created_at", { ascending: false });
-    if (error) return console.error(error);
-    setSuppliers((data || []) as Supplier[]);
+    if (!error) setSuppliers((data || []) as Supplier[]);
   }
   async function addSupplier(e: React.FormEvent) {
     e.preventDefault();
@@ -215,18 +154,15 @@ export default function App() {
         supplier:suppliers(id, name, site_url)
       `)
       .order("created_at", { ascending: false });
-    if (error) return console.error(error);
-    setRefs((data || []) as any);
+    if (!error) setRefs((data || []) as any);
   }
   async function addSupplierRef(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedPartId || !selectedSupplierId || !supplierRef.trim()) return;
     setLoadingRef(true);
     const { error } = await supabase.from("supplier_part_refs").insert({
-      part_id: selectedPartId,
-      supplier_id: selectedSupplierId,
-      supplier_ref: supplierRef.trim(),
-      product_url: productUrl || null,
+      part_id: selectedPartId, supplier_id: selectedSupplierId,
+      supplier_ref: supplierRef.trim(), product_url: productUrl || null,
     });
     setLoadingRef(false);
     if (error) {
@@ -235,8 +171,7 @@ export default function App() {
       else alert(error.message);
       return;
     }
-    setSupplierRef(""); setProductUrl("");
-    loadSupplierRefs();
+    setSupplierRef(""); setProductUrl(""); loadSupplierRefs();
   }
 
   async function loadOffers() {
@@ -251,8 +186,7 @@ export default function App() {
         )
       `)
       .order("noted_at", { ascending: false });
-    if (error) return console.error(error);
-    setOffers((data || []) as any);
+    if (!error) setOffers((data || []) as any);
   }
   async function addOffer(e: React.FormEvent) {
     e.preventDefault();
@@ -264,14 +198,11 @@ export default function App() {
 
     setLoadingOffer(true);
     const { error } = await supabase.from("offers").insert({
-      supplier_part_ref_id: offerRefId,
-      price: priceNumber,
-      qty_available: qtyNumber,
+      supplier_part_ref_id: offerRefId, price: priceNumber, qty_available: qtyNumber,
     });
     setLoadingOffer(false);
     if (error) return alert(error.message);
-    setOfferPrice(""); setOfferQty("");
-    loadOffers();
+    setOfferPrice(""); setOfferQty(""); loadOffers();
   }
 
   async function loadOrders() {
@@ -282,8 +213,7 @@ export default function App() {
         supplier:suppliers(id, name, site_url)
       `)
       .order("created_at", { ascending: false });
-    if (error) return console.error(error);
-    setOrders((data || []) as any);
+    if (!error) setOrders((data || []) as any);
   }
   async function createOrder(e: React.FormEvent) {
     e.preventDefault();
@@ -292,13 +222,10 @@ export default function App() {
     const { data, error } = await supabase
       .from("orders")
       .insert({
-        supplier_id: newOrderSupplierId,
-        site: newOrderSite,
-        external_ref: newOrderExternalRef || null,
-        status: "draft",
+        supplier_id: newOrderSupplierId, site: newOrderSite,
+        external_ref: newOrderExternalRef || null, status: "draft",
       })
-      .select("id")
-      .single();
+      .select("id").single();
     setCreatingOrder(false);
     if (error) return alert(error.message);
     setNewOrderExternalRef(""); setNewOrderSite(""); setNewOrderSupplierId("");
@@ -327,9 +254,7 @@ export default function App() {
         .select("order_item_id, qty_received")
         .in("order_item_id", ids);
       const map: Record<string, number> = {};
-      (recAgg || []).forEach((r: any) => {
-        map[r.order_item_id] = (map[r.order_item_id] || 0) + Number(r.qty_received || 0);
-      });
+      (recAgg || []).forEach((r: any) => { map[r.order_item_id] = (map[r.order_item_id] || 0) + Number(r.qty_received || 0); });
       setReceivedByItem(map);
     } else {
       setReceivedByItem({});
@@ -345,12 +270,8 @@ export default function App() {
 
     setAddingItem(true);
     const { error } = await supabase.from("order_items").insert({
-      order_id: activeOrderId,
-      part_id: oiPartId,
-      supplier_ref: oiSupplierRef || null,
-      qty: qtyNumber,
-      unit_price: unitPriceNumber,
-      currency: "EUR",
+      order_id: activeOrderId, part_id: oiPartId, supplier_ref: oiSupplierRef || null,
+      qty: qtyNumber, unit_price: unitPriceNumber, currency: "EUR",
     });
     setAddingItem(false);
     if (error) return alert(error.message);
@@ -359,28 +280,24 @@ export default function App() {
   }
   async function setOrderStatus(orderId: string, next: "draft" | "ordered") {
     const { error } = await supabase.from("orders").update({ status: next }).eq("id", orderId);
-    if (error) return alert(error.message);
-    await loadOrders();
+    if (!error) await loadOrders();
   }
 
   async function loadInventory() {
     const { data, error } = await supabase.from("inventory").select("*").order("updated_at", { ascending: false });
-    if (error) return console.error(error);
-    setInventory((data || []) as any);
+    if (!error) setInventory((data || []) as any);
   }
 
   async function loadSites() {
     const { data, error } = await supabase.from("sites").select("*").order("name");
-    if (error) return console.error(error);
-    setSites((data || []) as any);
+    if (!error) setSites((data || []) as any);
   }
   async function addSite(e: React.FormEvent) {
     e.preventDefault();
     if (!siteName.trim()) return;
     const { error } = await supabase.from("sites").insert({ name: siteName.trim(), note: siteNote || null });
     if (error) return alert(error.message);
-    setSiteName(""); setSiteNote("");
-    loadSites();
+    setSiteName(""); setSiteNote(""); loadSites();
   }
 
   async function doTransfer(e: React.FormEvent) {
@@ -389,18 +306,13 @@ export default function App() {
     const qty = Number(transferQty);
     if (!Number.isFinite(qty) || qty <= 0) return alert("Quantité invalide");
     const { error } = await supabase.rpc("stock_transfer", {
-      site_from: transferFrom,
-      site_to: transferTo,
-      part_id_in: transferPartId,
-      qty_in: qty,
+      site_from: transferFrom, site_to: transferTo, part_id_in: transferPartId, qty_in: qty,
     });
     if (error) return alert(error.message);
-    setTransferQty("");
-    await loadInventory();
-    alert("Transfert effectué ✅");
+    setTransferQty(""); await loadInventory(); alert("Transfert effectué ✅");
   }
 
-  /** ----------------------- HELPERS ----------------------- **/
+  /** ---------------- HELPERS ---------------- */
   const refsByPart = useMemo(() => {
     const m: Record<string, SupplierRef[]> = {};
     for (const r of refs) (m[r.part_id] ||= []).push(r);
@@ -410,10 +322,8 @@ export default function App() {
   const bestOfferByPart = useMemo(() => {
     const best: Record<string, Offer | undefined> = {};
     for (const o of offers) {
-      const pid = o.ref?.part?.id;
-      if (!pid) continue;
-      const current = best[pid];
-      if (!current || o.price < current.price) best[pid] = o;
+      const pid = o.ref?.part?.id; if (!pid) continue;
+      const cur = best[pid]; if (!cur || o.price < cur.price) best[pid] = o;
     }
     return best;
   }, [offers]);
@@ -432,10 +342,8 @@ export default function App() {
 
     const lines: { order_item_id: string; qty_received: number }[] = [];
     for (const it of orderItems) {
-      const raw = toReceive[it.id];
-      if (!raw) continue;
-      const q = Number(raw);
-      if (!Number.isFinite(q) || q <= 0) continue;
+      const raw = toReceive[it.id]; if (!raw) continue;
+      const q = Number(raw); if (!Number.isFinite(q) || q <= 0) continue;
       const max = remainingFor(it);
       if (q > max) { alert(`La quantité pour "${it.part?.sku}" dépasse le restant (${q} > ${max}).`); return; }
       lines.push({ order_item_id: it.id, qty_received: q });
@@ -443,42 +351,59 @@ export default function App() {
     if (lines.length === 0) { alert("Renseigne au moins une quantité à réceptionner."); return; }
 
     const { data: receipt, error: recErr } = await supabase
-      .from("receipts")
-      .insert({ order_id: activeOrderId, site })
-      .select("id")
-      .single();
+      .from("receipts").insert({ order_id: activeOrderId, site }).select("id").single();
     if (recErr) return alert(recErr.message);
 
     const payload = lines.map(l => ({ receipt_id: receipt!.id, order_item_id: l.order_item_id, qty_received: l.qty_received }));
     const { error: riErr } = await supabase.from("receipt_items").insert(payload);
     if (riErr) return alert(riErr.message);
 
-    await loadOrderItems(activeOrderId);
-    await loadInventory();
-    await loadOrders();
-    setToReceive({});
-    alert("Réception enregistrée ✅");
+    await loadOrderItems(activeOrderId); await loadInventory(); await loadOrders();
+    setToReceive({}); alert("Réception enregistrée ✅");
   }
 
-  /** ----------------------- LIFECYCLE ----------------------- **/
+  /** --------------- LIFECYCLE (ne charger qu’une fois loggé) --------------- */
   useEffect(() => {
-    loadParts();
-    loadSuppliers();
-    loadSupplierRefs();
-    loadOffers();
-    loadOrders();
-    loadInventory();
-    loadSites();
-  }, []);
+    if (!session) return;
+    loadParts(); loadSuppliers(); loadSupplierRefs(); loadOffers();
+    loadOrders(); loadInventory(); loadSites();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
   useEffect(() => {
-    if (activeOrderId) {
-      loadOrderItems(activeOrderId);
-      setReceiveSite(activeOrder?.site || "");
-    }
+    if (activeOrderId) { loadOrderItems(activeOrderId); setReceiveSite(activeOrder?.site || ""); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrderId]);
 
-  /** ----------------------- UI ----------------------- **/
+  /** --------------- GARDES D’AFFICHAGE APRÈS TOUS LES HOOKS --------------- */
+  if (!authReady) {
+    return <div style={{ maxWidth: 480, margin: "10vh auto", padding: 24 }}>Chargement…</div>;
+  }
+  if (!session) {
+    return (
+      <div style={{ maxWidth: 480, margin: "10vh auto", padding: 24 }}>
+        <h1>Connexion</h1>
+        <form onSubmit={signInWithPassword} style={{ display: "grid", gap: 12 }}>
+          <div><label>Email</label>
+            <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)}
+                   placeholder="vous@exemple.com" style={{ width: "100%", padding: 10 }} />
+          </div>
+          <div><label>Mot de passe</label>
+            <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)}
+                   placeholder="••••••••" style={{ width: "100%", padding: 10 }} />
+          </div>
+          <button disabled={authLoading} style={{ padding: "10px 16px" }}>
+            {authLoading ? "Connexion..." : "Se connecter"}
+          </button>
+          <button onClick={signUp} type="button" style={{ padding: "10px 16px" }}>
+            Créer un compte
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  /** ----------------------- UI APP ----------------------- **/
   return (
     <div style={{ maxWidth: 1180, margin: "0 auto", padding: 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -533,13 +458,11 @@ export default function App() {
         <form onSubmit={addSite} style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 2fr auto", alignItems: "end" }}>
           <div>
             <label>Nom du site</label>
-            <input value={siteName} onChange={(e) => setSiteName(e.target.value)} placeholder="ex: Atelier A"
-                   style={{ width: "100%", padding: 8 }} />
+            <input value={siteName} onChange={(e) => setSiteName(e.target.value)} placeholder="ex: Atelier A" style={{ width: "100%", padding: 8 }} />
           </div>
           <div>
             <label>Note (optionnel)</label>
-            <input value={siteNote} onChange={(e) => setSiteNote(e.target.value)} placeholder="ex: étage -1"
-                   style={{ width: "100%", padding: 8 }} />
+            <input value={siteNote} onChange={(e) => setSiteNote(e.target.value)} placeholder="ex: étage -1" style={{ width: "100%", padding: 8 }} />
           </div>
           <button style={{ padding: "10px 16px" }}>Ajouter</button>
         </form>
@@ -747,8 +670,7 @@ export default function App() {
             <div style={{ marginTop: 16, display: "grid", gap: 8, gridTemplateColumns: "1fr auto" }}>
               <div>
                 <label>Site de réception</label>
-                <input value={receiveSite} onChange={(e) => setReceiveSite(e.target.value)} placeholder="ex: Atelier A"
-                       style={{ width: "100%", padding: 8 }} />
+                <input value={receiveSite} onChange={(e) => setReceiveSite(e.target.value)} placeholder="ex: Atelier A" style={{ width: "100%", padding: 8 }} />
                 <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
                   (laissé vide → on utilisera le site de la commande)
                 </div>
