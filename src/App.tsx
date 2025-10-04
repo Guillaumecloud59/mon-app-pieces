@@ -140,7 +140,7 @@ export default function App() {
 
   // Réfs fournisseur
   const [refs, setRefs] = useState<SupplierRef[]>([]);
-  const [selectedPartId, setSelectedPartId] = useState(""); const [selectedSupplierId, setSelectedSupplierId] = useState("");
+  const [selectedPartId, setSelectedPartId] = useState(""); const [selectedSupplierId] = useState("");
   const [supplierRef, setSupplierRef] = useState(""); const [productUrl, setProductUrl] = useState("");
   const [loadingRef, setLoadingRef] = useState(false);
 
@@ -488,13 +488,25 @@ export default function App() {
     loadProfileAndMaybeUsers();
     loadParts(); loadSuppliers(); loadSupplierRefs(); loadOffers();
     loadOrders(); loadInventory(); loadSites();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
   useEffect(() => {
     if (activeOrderId) { loadOrderItems(activeOrderId); setReceiveSite(activeOrder?.site || mySite || ""); }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrderId]);
+
+  /** ---------------- TABS (SANS HOOK) ---------------- */
+  const tabs: { key: TabKey; label: string }[] = (() => {
+    const base: { key: TabKey; label: string }[] = [
+      { key: "db",        label: "Base de données" },
+      { key: "orders",    label: "Commandes" },
+      { key: "transfer",  label: "Transfert" },
+      { key: "inventory", label: "Inventaire" },
+    ];
+    if (isAdmin) base.push({ key: "admin", label: "Administration" });
+    return base;
+  })();
 
   /** ---------------- GUARDS ---------------- */
   if (!authReady) {
@@ -531,17 +543,6 @@ export default function App() {
   }
 
   /** ---------------- UI ---------------- */
-  const tabs: { key: TabKey; label: string }[] = useMemo(() => {
-    const base: { key: TabKey; label: string }[] = [
-      { key: "db",        label: "Base de données" },
-      { key: "orders",    label: "Commandes" },
-      { key: "transfer",  label: "Transfert" },
-      { key: "inventory", label: "Inventaire" },
-    ];
-    if (isAdmin) base.push({ key: "admin", label: "Administration" });
-    return base;
-  }, [isAdmin]);
-
   function Nav() {
     return (
       <nav style={{
@@ -668,7 +669,7 @@ export default function App() {
                   </select>
                 </div>
                 <div><label>Fournisseur</label>
-                  <select value={selectedSupplierId} onChange={(e) => setSelectedSupplierId(e.target.value)} style={{ width: "100%", padding: 8 }}>
+                  <select value={offerRefId ? refs.find(r => r.id === offerRefId)?.supplier_id ?? "" : ""} onChange={() => {}} disabled style={{ width: "100%", padding: 8 }}>
                     <option value="">— choisir —</option>
                     {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
@@ -692,7 +693,7 @@ export default function App() {
                 <div><label>Réf fournisseur</label>
                   <select value={offerRefId} onChange={(e) => setOfferRefId(e.target.value)} style={{ width: "100%", padding: 8 }}>
                     <option value=""></option>
-                    {(offerPartId ? (refsByPart[offerPartId] || []) : []).map((r) => (
+                    {(offerPartId ? (refs.filter(r => r.part_id === offerPartId)) : []).map((r) => (
                       <option key={r.id} value={r.id}>
                         {(suppliers.find(s => s.id === r.supplier_id)?.name) || "Fournisseur"} — {r.supplier_ref}
                       </option>
