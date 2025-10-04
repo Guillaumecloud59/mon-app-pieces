@@ -181,8 +181,9 @@ export default function App() {
   const [invQuery, setInvQuery] = useState<string>("");
   const [invCondFilter, setInvCondFilter] = useState<InventoryRow["condition"] | "">("");
   type InvSortKey = "site" | "part" | "condition" | "qty" | "location" | "updated";
-  const [invSortKey, setInvSortKey] = useState<InvSortKey>("site");
-  const [invSortDir, setInvSortDir] = useState<"asc" | "desc">("asc");
+  const [invSortKey] = useState<InvSortKey>("site");
+  const [invSortDir] = useState<"asc" | "desc">("asc");
+
 
   // Groupes inventaire (pliés/dépliés)
   const [invExpanded, setInvExpanded] = useState<Record<string, boolean>>({});
