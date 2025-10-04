@@ -398,53 +398,73 @@ export default function App() {
   }
 
   async function addOrderItem(e: React.FormEvent) {
-    e.preventDefault();
-    if (!activeOrderId) return;
+  e.preventDefault();
+  if (!activeOrderId) return;
 
-    const qtyNumber = Number(oiQty);
-    if (!Number.isFinite(qtyNumber) || qtyNumber <= 0) return notify("La quantité doit être > 0", "error");
-    const unitPriceNumber = oiUnitPrice === "" ? null : Number(oiUnitPrice);
-    if (unitPriceNumber !== null && (!Number.isFinite(unitPriceNumber) || unitPriceNumber < 0)) return notify("Prix unitaire invalide", "error");
+  const qtyNumber = Number(oiQty);
+  if (!Number.isFinite(qtyNumber) || qtyNumber <= 0) return notify("La quantité doit être > 0", "error");
+  const unitPriceNumber = oiUnitPrice === "" ? null : Number(oiUnitPrice);
+  if (unitPriceNumber !== null && (!Number.isFinite(unitPriceNumber) || unitPriceNumber < 0)) return notify("Prix unitaire invalide", "error");
 
-    // Auto par réf fournisseur si saisie
-    let partIdToUse = oiPartId;
-    if (!partIdToUse && oiSupplierRef.trim()) {
-      if (!newOrderSupplierId) return notify("Sélectionne un fournisseur pour utiliser la réf fournisseur.", "error");
+  // Auto par réf fournisseur si saisie
+  let partIdToUse = oiPartId;
 
-      const { data: foundRef, error: findErr } = await supabase
-        .from("supplier_part_refs")
-        .select("id, part_id")
-        .eq("supplier_id", newOrderSupplierId)
-        .eq("supplier_ref", oiSupplierRef.trim())
-        .maybeSingle();
-      if (findErr) return notify(findErr.message, "error");
+  if (!partIdToUse && oiSupplierRef.trim()) {
+    if (!newOrderSupplierId) return notify("Sélectionne un fournisseur pour utiliser la réf fournisseur.", "error");
 
-      if (foundRef?.part_id) {
-        partIdToUse = foundRef.part_id as string;
-      } else {
-        await createPendingRef(newOrderSupplierId, oiSupplierRef);
-        notify("Réf inconnue : ajoutée à « À référencer » (admin).", "info");
-        setOiSupplierRef(""); setOiQty(""); setOiUnitPrice("");
-        return; // pas d'insert de ligne tant que non référencée
-      }
+    // Chercher la réf chez ce fournisseur
+    const { data: foundRef, error: findErr } = await supabase
+      .from("supplier_part_refs")
+      .select("id, part_id")
+      .eq("supplier_id", newOrderSupplierId)
+      .eq("supplier_ref", oiSupplierRef.trim())
+      .maybeSingle();
+
+    if (findErr) return notify(findErr.message, "error");
+
+    if (foundRef?.part_id) {
+      // Réf connue -> on lie la pièce
+      partIdToUse = foundRef.part_id as string;
+    } else {
+      // Réf inconnue -> créer une entrée "À référencer" (admin)
+      await createPendingRef(newOrderSupplierId, oiSupplierRef);
+      notify("Réf inconnue : ajoutée à « À référencer » (admin).", "info");
+
+      // 👉 ET on ajoute quand même la ligne de commande avec part_id = NULL
+      const { error: insErr } = await supabase.from("order_items").insert({
+        order_id: activeOrderId,
+        part_id: null,                    // pas encore renseignée
+        supplier_ref: oiSupplierRef,      // on garde la réf
+        qty: qtyNumber,
+        unit_price: unitPriceNumber,
+        currency: "EUR",
+      });
+      if (insErr) return notify(insErr.message, "error");
+
+      setOiPartId(""); setOiSupplierRef(""); setOiQty(""); setOiUnitPrice("");
+      await loadOrderItems(activeOrderId);
+      return notify("Ligne ajoutée (pièce à référencer).", "success");
     }
-
-    if (!partIdToUse) return notify("Choisis une pièce ou saisis une réf fournisseur existante.", "error");
-
-    const { error } = await supabase.from("order_items").insert({
-      order_id: activeOrderId,
-      part_id: partIdToUse,
-      supplier_ref: oiSupplierRef || null,
-      qty: qtyNumber,
-      unit_price: unitPriceNumber,
-      currency: "EUR",
-    });
-    if (error) return notify(error.message, "error");
-
-    setOiPartId(""); setOiSupplierRef(""); setOiQty(""); setOiUnitPrice("");
-    await loadOrderItems(activeOrderId);
-    notify("Ligne ajoutée", "success");
   }
+
+  // Cas normal : on a une pièce (sélectionnée ou trouvée automatiquement)
+  if (!partIdToUse) return notify("Choisis une pièce ou saisis une réf fournisseur.", "error");
+
+  const { error } = await supabase.from("order_items").insert({
+    order_id: activeOrderId,
+    part_id: partIdToUse,
+    supplier_ref: oiSupplierRef || null,
+    qty: qtyNumber,
+    unit_price: unitPriceNumber,
+    currency: "EUR",
+  });
+  if (error) return notify(error.message, "error");
+
+  setOiPartId(""); setOiSupplierRef(""); setOiQty(""); setOiUnitPrice("");
+  await loadOrderItems(activeOrderId);
+  notify("Ligne ajoutée", "success");
+}
+
   async function setOrderStatus(orderId: string, next: "draft" | "ordered") {
     const { error } = await supabase.from("orders").update({ status: next }).eq("id", orderId);
     if (error) notify(error.message, "error"); else { await loadOrders(); notify(`Commande → ${next}`, "success"); }
