@@ -28,6 +28,52 @@ type OrderItem = {
 type InventoryRow = { site: string; part_id: string; qty_on_hand: number; updated_at: string };
 type SiteRow = { id: string; name: string; note?: string | null; created_at: string };
 
+/** ========= Mini système de toasts ========= **/
+type ToastKind = "success" | "error" | "info";
+type Toast = { id: string; kind: ToastKind; text: string };
+
+function Toasts({ items, onClose }: { items: Toast[]; onClose: (id: string) => void }) {
+  return (
+    <div style={{
+      position: "fixed", right: 16, bottom: 16, display: "grid", gap: 8, zIndex: 9999, maxWidth: 360
+    }}>
+      {items.map(t => (
+        <div key={t.id}
+             style={{
+               padding: "10px 12px", borderRadius: 10,
+               background: t.kind === "error" ? "#fee2e2" : t.kind === "success" ? "#e7f6ed" : "#eef2ff",
+               color: "#111", boxShadow: "0 4px 14px rgba(0,0,0,.08)", border: "1px solid rgba(0,0,0,.06)"
+             }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+            <div>
+              <b style={{ textTransform: "capitalize" }}>{t.kind}</b> — {t.text}
+            </div>
+            <button onClick={() => onClose(t.id)} style={{ border: "none", background: "transparent", cursor: "pointer" }}>×</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function useToasts() {
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  function notify(text: string, kind: ToastKind = "info") {
+    const id = Math.random().toString(36).slice(2);
+    setToasts(prev => [...prev, { id, text, kind }]);
+    setTimeout(() => dismiss(id), 3500);
+  }
+  function dismiss(id: string) {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }
+  return { toasts, notify, dismiss };
+}
+
+/** ========= Utilitaires ========= **/
+function fmtDate(d: string | Date) {
+  try { return new Date(d).toLocaleString(); } catch { return String(d); }
+}
+
 export default function App() {
   /** ---------------- AUTH ---------------- */
   const [session, setSession] = useState<Session | null>(null);
@@ -35,6 +81,8 @@ export default function App() {
   const [authPassword, setAuthPassword] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [authReady, setAuthReady] = useState(false);
+
+  const { toasts, notify, dismiss } = useToasts();
 
   useEffect(() => {
     let cancelled = false;
@@ -53,7 +101,7 @@ export default function App() {
     setAuthLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
     setAuthLoading(false);
-    if (error) alert(error.message);
+    if (error) notify(error.message, "error");
   }
   async function signUp(e: React.FormEvent) {
     e.preventDefault();
@@ -61,8 +109,8 @@ export default function App() {
     setAuthLoading(true);
     const { error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
     setAuthLoading(false);
-    if (error) alert(error.message);
-    else alert("Compte créé. Connecte-toi (ou vérifie tes emails si la confirmation est activée).");
+    if (error) notify(error.message, "error");
+    else notify("Compte créé. Connecte-toi (ou confirme par email si requis).", "success");
   }
   async function signOut() { await supabase.auth.signOut(); }
 
@@ -77,6 +125,7 @@ export default function App() {
   // Pièces
   const [sku, setSku] = useState(""); const [label, setLabel] = useState("");
   const [parts, setParts] = useState<Part[]>([]); const [loadingPart, setLoadingPart] = useState(false);
+  const [partsQuery, setPartsQuery] = useState(""); // 🔎 filtre
 
   // Fournisseurs
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -97,6 +146,7 @@ export default function App() {
 
   // Commandes
   const [orders, setOrders] = useState<Order[]>([]);
+  const [ordersQuery, setOrdersQuery] = useState(""); // 🔎 filtre
   const [newOrderSupplierId, setNewOrderSupplierId] = useState("");
   const [newOrderSite, setNewOrderSite] = useState("");
   const [newOrderExternalRef, setNewOrderExternalRef] = useState("");
@@ -127,42 +177,30 @@ export default function App() {
 
   /** ---------------- LOADERS ---------------- */
   async function loadProfileAndMaybeUsers() {
-  if (!session) return;
+    if (!session) return;
 
-  // 1) Vérifie via la RPC is_admin()
-  const { data: isAdm, error: eAdm } = await supabase.rpc("is_admin");
-  if (!eAdm && typeof isAdm === "boolean") {
-    setIsAdmin(isAdm);
-  }
+    const { data: isAdm } = await supabase.rpc("is_admin");
+    setIsAdmin(!!isAdm);
 
-  // 2) Récupère aussi ton site depuis profiles (lecture de ta propre ligne)
-  const { data: prof, error } = await supabase
-    .from("profiles")
-    .select("admin, site")
-    .eq("id", session.user.id)
-    .single();
-
-  if (!error && prof) {
-    // aligne avec la vérité RPC au cas où
-    setIsAdmin(isAdm ?? !!prof.admin);
-    setMySite(prof.site || "");
-    if (prof.site) {
-      setNewOrderSite(prof.site);
-      setReceiveSite((prev) => prev || prof.site);
+    const { data: prof } = await supabase.from("profiles").select("admin, site").eq("id", session.user.id).single();
+    if (prof) {
+      setIsAdmin(isAdm ?? !!prof.admin);
+      setMySite(prof.site || "");
+      if (prof.site) {
+        setNewOrderSite(prof.site);
+        setReceiveSite((prev) => prev || prof.site);
+      }
+    }
+    if (isAdm) {
+      const { data } = await supabase.rpc("list_users");
+      if (data) setAllUsers(data as any);
     }
   }
 
-  // 3) Si admin → charge la liste des users via list_users()
-  if (isAdm) {
-    const { data, error: e2 } = await supabase.rpc("list_users");
-    if (!e2 && data) setAllUsers(data as any);
-  }
-}
-
-
   async function loadParts() {
     const { data, error } = await supabase.from("parts").select("*").order("created_at", { ascending: false });
-    if (!error) setParts((data || []) as Part[]);
+    if (error) notify(error.message, "error");
+    else setParts((data || []) as Part[]);
   }
   async function addPart(e: React.FormEvent) {
     e.preventDefault();
@@ -170,13 +208,14 @@ export default function App() {
     setLoadingPart(true);
     const { error } = await supabase.from("parts").insert({ sku: sku.trim(), label: label.trim() });
     setLoadingPart(false);
-    if (error) return alert(error.message);
-    setSku(""); setLabel(""); loadParts();
+    if (error) return notify(error.message, "error");
+    setSku(""); setLabel(""); await loadParts(); notify("Pièce ajoutée", "success");
   }
 
   async function loadSuppliers() {
     const { data, error } = await supabase.from("suppliers").select("*").order("created_at", { ascending: false });
-    if (!error) setSuppliers((data || []) as Supplier[]);
+    if (error) notify(error.message, "error");
+    else setSuppliers((data || []) as Supplier[]);
   }
   async function addSupplier(e: React.FormEvent) {
     e.preventDefault();
@@ -184,8 +223,8 @@ export default function App() {
     setLoadingSupplier(true);
     const { error } = await supabase.from("suppliers").insert({ name: supplierName.trim(), site_url: supplierUrl || null });
     setLoadingSupplier(false);
-    if (error) return alert(error.message);
-    setSupplierName(""); setSupplierUrl(""); loadSuppliers();
+    if (error) return notify(error.message, "error");
+    setSupplierName(""); setSupplierUrl(""); await loadSuppliers(); notify("Fournisseur ajouté", "success");
   }
 
   async function loadSupplierRefs() {
@@ -197,7 +236,8 @@ export default function App() {
         supplier:suppliers(id, name, site_url)
       `)
       .order("created_at", { ascending: false });
-    if (!error) setRefs((data || []) as any);
+    if (error) notify(error.message, "error");
+    else setRefs((data || []) as any);
   }
   async function addSupplierRef(e: React.FormEvent) {
     e.preventDefault();
@@ -210,11 +250,11 @@ export default function App() {
     setLoadingRef(false);
     if (error) {
       // @ts-ignore
-      if (error.code === "23505") alert("Déjà une réf pour ce fournisseur et cette pièce (contrainte unique).");
-      else alert(error.message);
+      if (error.code === "23505") notify("Référence déjà existante pour ce couple pièce/fournisseur.", "error");
+      else notify(error.message, "error");
       return;
     }
-    setSupplierRef(""); setProductUrl(""); loadSupplierRefs();
+    setSupplierRef(""); setProductUrl(""); await loadSupplierRefs(); notify("Référence liée", "success");
   }
 
   async function loadOffers() {
@@ -229,23 +269,24 @@ export default function App() {
         )
       `)
       .order("noted_at", { ascending: false });
-    if (!error) setOffers((data || []) as any);
+    if (error) notify(error.message, "error");
+    else setOffers((data || []) as any);
   }
   async function addOffer(e: React.FormEvent) {
     e.preventDefault();
     if (!offerRefId || offerPrice === "") return;
     const priceNumber = Number(offerPrice);
-    if (!Number.isFinite(priceNumber) || priceNumber < 0) return alert("Prix invalide");
+    if (!Number.isFinite(priceNumber) || priceNumber < 0) return notify("Prix invalide", "error");
     const qtyNumber = offerQty === "" ? null : Number(offerQty);
-    if (qtyNumber !== null && (!Number.isFinite(qtyNumber) || qtyNumber < 0)) return alert("Qté invalide");
+    if (qtyNumber !== null && (!Number.isFinite(qtyNumber) || qtyNumber < 0)) return notify("Quantité invalide", "error");
 
     setLoadingOffer(true);
     const { error } = await supabase.from("offers").insert({
       supplier_part_ref_id: offerRefId, price: priceNumber, qty_available: qtyNumber,
     });
     setLoadingOffer(false);
-    if (error) return alert(error.message);
-    setOfferPrice(""); setOfferQty(""); loadOffers();
+    if (error) return notify(error.message, "error");
+    setOfferPrice(""); setOfferQty(""); await loadOffers(); notify("Offre enregistrée", "success");
   }
 
   async function loadOrders() {
@@ -256,11 +297,11 @@ export default function App() {
         supplier:suppliers(id, name, site_url)
       `)
       .order("created_at", { ascending: false });
-    if (!error) setOrders((data || []) as any);
+    if (error) notify(error.message, "error");
+    else setOrders((data || []) as any);
   }
   async function createOrder(e: React.FormEvent) {
     e.preventDefault();
-    // Si mySite est défini, on force le site (RLS protège quand même)
     const siteToUse = mySite || newOrderSite;
     if (!newOrderSupplierId || !siteToUse) return;
     setCreatingOrder(true);
@@ -272,11 +313,12 @@ export default function App() {
       })
       .select("id").single();
     setCreatingOrder(false);
-    if (error) return alert(error.message);
+    if (error) return notify(error.message, "error");
     setNewOrderExternalRef(""); if (!mySite) setNewOrderSite("");
     setNewOrderSupplierId("");
     await loadOrders();
     if (data?.id) setActiveOrderId(data.id as string);
+    notify("Commande créée", "success");
   }
 
   async function loadOrderItems(orderId: string) {
@@ -289,7 +331,7 @@ export default function App() {
       `)
       .eq("order_id", orderId)
       .order("created_at", { ascending: true });
-    if (error) return alert(error.message);
+    if (error) return notify(error.message, "error");
     setOrderItems((data || []) as any);
 
     if ((data || []).length) {
@@ -309,9 +351,9 @@ export default function App() {
     e.preventDefault();
     if (!activeOrderId || !oiPartId) return;
     const qtyNumber = Number(oiQty);
-    if (!Number.isFinite(qtyNumber) || qtyNumber <= 0) return alert("La quantité doit être > 0");
+    if (!Number.isFinite(qtyNumber) || qtyNumber <= 0) return notify("La quantité doit être > 0", "error");
     const unitPriceNumber = oiUnitPrice === "" ? null : Number(oiUnitPrice);
-    if (unitPriceNumber !== null && (!Number.isFinite(unitPriceNumber) || unitPriceNumber < 0)) return alert("Prix unitaire invalide");
+    if (unitPriceNumber !== null && (!Number.isFinite(unitPriceNumber) || unitPriceNumber < 0)) return notify("Prix unitaire invalide", "error");
 
     setAddingItem(true);
     const { error } = await supabase.from("order_items").insert({
@@ -319,58 +361,60 @@ export default function App() {
       qty: qtyNumber, unit_price: unitPriceNumber, currency: "EUR",
     });
     setAddingItem(false);
-    if (error) return alert(error.message);
+    if (error) return notify(error.message, "error");
     setOiPartId(""); setOiSupplierRef(""); setOiQty(""); setOiUnitPrice("");
-    loadOrderItems(activeOrderId);
+    await loadOrderItems(activeOrderId); notify("Ligne ajoutée", "success");
   }
   async function setOrderStatus(orderId: string, next: "draft" | "ordered") {
     const { error } = await supabase.from("orders").update({ status: next }).eq("id", orderId);
-    if (!error) await loadOrders();
+    if (error) notify(error.message, "error");
+    else { await loadOrders(); notify(`Commande → ${next}`, "success"); }
   }
 
   async function loadInventory() {
     const { data, error } = await supabase.from("inventory").select("*").order("updated_at", { ascending: false });
-    if (!error) setInventory((data || []) as any);
+    if (error) notify(error.message, "error");
+    else setInventory((data || []) as any);
   }
 
   async function loadSites() {
     const { data, error } = await supabase.from("sites").select("*").order("name");
-    if (!error) setSites((data || []) as any);
+    if (error) notify(error.message, "error");
+    else setSites((data || []) as any);
   }
   async function addSite(e: React.FormEvent) {
     e.preventDefault();
     if (!siteName.trim()) return;
     const { error } = await supabase.from("sites").insert({ name: siteName.trim(), note: siteNote || null });
-    if (error) return alert(error.message);
+    if (error) return notify(error.message, "error");
     setSiteName(""); setSiteNote("");
-    loadSites();
+    await loadSites(); notify("Site ajouté", "success");
   }
 
   async function doTransfer(e: React.FormEvent) {
     e.preventDefault();
     if (!transferPartId || !transferFrom || !transferTo || !transferQty) return;
     const qty = Number(transferQty);
-    if (!Number.isFinite(qty) || qty <= 0) return alert("Quantité invalide");
+    if (!Number.isFinite(qty) || qty <= 0) return notify("Quantité invalide", "error");
     const { error } = await supabase.rpc("stock_transfer", {
       site_from: transferFrom, site_to: transferTo, part_id_in: transferPartId, qty_in: qty,
     });
-    if (error) return alert(error.message);
-    setTransferQty(""); await loadInventory(); alert("Transfert effectué ✅");
+    if (error) return notify(error.message, "error");
+    setTransferQty(""); await loadInventory(); notify("Transfert effectué", "success");
   }
 
   /** ---------------- ADMIN ACTIONS ---------------- */
   async function assignSite(userId: string, siteName: string) {
-    if (!siteName) return alert("Choisis un site.");
+    if (!siteName) return notify("Choisis un site.", "error");
     const { error } = await supabase.rpc("set_user_site", { target_user: userId, target_site: siteName });
-    if (error) return alert(error.message);
-    // Rafraîchir localement
+    if (error) return notify(error.message, "error");
     setAllUsers(prev => prev.map(u => u.id === userId ? { ...u, site: siteName } : u));
     if (session?.user.id === userId) {
       setMySite(siteName);
       setNewOrderSite(siteName);
       setReceiveSite(siteName);
     }
-    alert("Site assigné ✅");
+    notify("Site assigné", "success");
   }
 
   /** ---------------- HELPERS ---------------- */
@@ -399,28 +443,28 @@ export default function App() {
   async function createReceiptWithItems() {
     if (!activeOrderId) return;
     const site = mySite || receiveSite || activeOrder?.site || "";
-    if (!site) { alert("Renseigne un site de réception."); return; }
+    if (!site) { notify("Renseigne un site de réception.", "error"); return; }
 
     const lines: { order_item_id: string; qty_received: number }[] = [];
     for (const it of orderItems) {
       const raw = toReceive[it.id]; if (!raw) continue;
       const q = Number(raw); if (!Number.isFinite(q) || q <= 0) continue;
       const max = remainingFor(it);
-      if (q > max) { alert(`La quantité pour "${it.part?.sku}" dépasse le restant (${q} > ${max}).`); return; }
+      if (q > max) { notify(`Qté pour "${it.part?.sku}" dépasse le restant (${q} > ${max}).`, "error"); return; }
       lines.push({ order_item_id: it.id, qty_received: q });
     }
-    if (lines.length === 0) { alert("Renseigne au moins une quantité à réceptionner."); return; }
+    if (lines.length === 0) { notify("Renseigne au moins une quantité à réceptionner.", "error"); return; }
 
     const { data: receipt, error: recErr } = await supabase
       .from("receipts").insert({ order_id: activeOrderId, site }).select("id").single();
-    if (recErr) return alert(recErr.message);
+    if (recErr) return notify(recErr.message, "error");
 
     const payload = lines.map(l => ({ receipt_id: receipt!.id, order_item_id: l.order_item_id, qty_received: l.qty_received }));
     const { error: riErr } = await supabase.from("receipt_items").insert(payload);
-    if (riErr) return alert(riErr.message);
+    if (riErr) return notify(riErr.message, "error");
 
     await loadOrderItems(activeOrderId); await loadInventory(); await loadOrders();
-    setToReceive({}); alert("Réception enregistrée ✅");
+    setToReceive({}); notify("Réception enregistrée", "success");
   }
 
   /** ---------------- LIFECYCLE ---------------- */
@@ -461,18 +505,37 @@ export default function App() {
             Créer un compte
           </button>
         </form>
+        <Toasts items={toasts} onClose={dismiss} />
       </div>
     );
   }
 
   /** ---------------- UI ---------------- */
+  // Filtres mémoïsés
+  const partsFiltered = useMemo(() => {
+    const q = partsQuery.trim().toLowerCase();
+    if (!q) return parts;
+    return parts.filter(p => (p.sku + " " + p.label).toLowerCase().includes(q));
+  }, [parts, partsQuery]);
+
+  const ordersFiltered = useMemo(() => {
+    const q = ordersQuery.trim().toLowerCase();
+    if (!q) return orders;
+    return orders.filter(o =>
+      (o.supplier?.name || "").toLowerCase().includes(q) ||
+      (o.external_ref || "").toLowerCase().includes(q) ||
+      (o.site || "").toLowerCase().includes(q) ||
+      (o.status || "").toLowerCase().includes(q)
+    );
+  }, [orders, ordersQuery]);
+
   return (
     <div style={{ maxWidth: 1180, margin: "0 auto", padding: 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1>Inventaire pièces (MVP)</h1>
         <div>
           <span style={{ marginRight: 8, fontSize: 12, opacity: 0.7 }}>
-            {session.user.email} {mySite ? ` · ${mySite}` : ""}
+            {session.user.email} {mySite ? <span style={{ background:"#eef", padding:"2px 6px", borderRadius:6, marginLeft:6 }}>{mySite}</span> : ""}
           </span>
           <button onClick={signOut}>Se déconnecter</button>
         </div>
@@ -480,29 +543,43 @@ export default function App() {
 
       {/* PIÈCES */}
       <section style={{ marginTop: 16 }}>
-        <h2>Pièces</h2>
-        <form onSubmit={addPart} style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 2fr auto", alignItems: "end" }}>
+        <div style={{ display: "flex", alignItems: "end", gap: 12, flexWrap: "wrap" }}>
+          <h2 style={{ margin: 0 }}>Pièces</h2>
+          <div style={{ marginLeft: "auto" }}>
+            <input
+              value={partsQuery}
+              onChange={(e) => setPartsQuery(e.target.value)}
+              placeholder="Rechercher (SKU, libellé)…"
+              style={{ padding: 8, minWidth: 260 }}
+            />
+          </div>
+        </div>
+
+        <form onSubmit={addPart} style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 2fr auto", alignItems: "end", marginTop: 10 }}>
           <div><label>SKU</label><input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="ex: ABC123" style={{ width: "100%", padding: 8 }} /></div>
           <div><label>Libellé</label><input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="ex: Courroie 12mm" style={{ width: "100%", padding: 8 }} /></div>
           <button disabled={loadingPart} style={{ padding: "10px 16px" }}>{loadingPart ? "Ajout..." : "Ajouter"}</button>
         </form>
 
         <ul style={{ padding: 0, listStyle: "none", marginTop: 12 }}>
-          {parts.map((p) => (
+          {partsFiltered.map((p) => (
             <li key={p.id} style={{ padding: 12, border: "1px solid #eee", marginBottom: 8, borderRadius: 8 }}>
-              <b>{p.sku}</b> — {p.label}
-              {bestOfferByPart[p.id] && (
-                <div style={{ marginTop: 6, fontSize: 14 }}>
-                  <span style={{ background: "#eef8ee", padding: "2px 6px", borderRadius: 6 }}>
-                    Meilleure offre : {bestOfferByPart[p.id]!.price.toFixed(2)} {bestOfferByPart[p.id]!.currency}
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <div><b>{p.sku}</b> — {p.label}</div>
+                {bestOfferByPart[p.id] && (
+                  <div style={{ fontSize: 12, background: "#e7f6ed", padding: "2px 6px", borderRadius: 6 }}>
+                    {bestOfferByPart[p.id]!.price.toFixed(2)} {bestOfferByPart[p.id]!.currency}
                     {" · "} {bestOfferByPart[p.id]!.ref?.supplier?.name}
-                    {bestOfferByPart[p.id]!.ref?.supplier_ref ? ` · réf ${bestOfferByPart[p.id]!.ref!.supplier_ref}` : ""}
-                  </span>
-                </div>
-              )}
+                  </div>
+                )}
+              </div>
             </li>
           ))}
-          {parts.length === 0 && <li>Aucune pièce pour l’instant.</li>}
+          {partsFiltered.length === 0 && (
+            <li style={{ padding: 16, border: "1px dashed #ddd", borderRadius: 8, textAlign: "center", opacity: .8 }}>
+              Aucune pièce ne correspond à “{partsQuery}”.
+            </li>
+          )}
         </ul>
       </section>
 
@@ -537,7 +614,7 @@ export default function App() {
               <b>{s.name}</b> {s.note ? <span style={{ opacity: 0.8 }}>— {s.note}</span> : null}
             </li>
           ))}
-          {sites.length === 0 && <li>Aucun site pour l’instant.</li>}
+          {sites.length === 0 && <li style={{ padding: 12, opacity: 0.7 }}>Aucun site pour l’instant.</li>}
         </ul>
       </section>
 
@@ -599,10 +676,20 @@ export default function App() {
 
       {/* COMMANDES */}
       <section style={{ marginTop: 32 }}>
-        <h2>Commandes</h2>
+        <div style={{ display: "flex", alignItems: "end", gap: 12, flexWrap: "wrap" }}>
+          <h2 style={{ margin: 0 }}>Commandes</h2>
+          <div style={{ marginLeft: "auto" }}>
+            <input
+              value={ordersQuery}
+              onChange={(e) => setOrdersQuery(e.target.value)}
+              placeholder="Rechercher (fournisseur, site, statut, n°)…"
+              style={{ padding: 8, minWidth: 300 }}
+            />
+          </div>
+        </div>
 
         {/* Créer une commande */}
-        <form onSubmit={createOrder} style={{ display: "grid", gap: 8, gridTemplateColumns: "1.5fr 1fr 1fr auto", alignItems: "end" }}>
+        <form onSubmit={createOrder} style={{ display: "grid", gap: 8, gridTemplateColumns: "1.5fr 1fr 1fr auto", alignItems: "end", marginTop: 10 }}>
           <div>
             <label>Fournisseur</label>
             <select value={newOrderSupplierId} onChange={(e) => setNewOrderSupplierId(e.target.value)} style={{ width: "100%", padding: 8 }}>
@@ -630,7 +717,7 @@ export default function App() {
 
         {/* Liste des commandes */}
         <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-          {orders.map((o) => (
+          {ordersFiltered.map((o) => (
             <div key={o.id}
                  onClick={() => { setActiveOrderId(o.id); setReceiveSite(o.site || mySite || ""); }}
                  style={{ border: "1px solid #eee", borderRadius: 8, padding: 12, cursor: "pointer",
@@ -646,10 +733,14 @@ export default function App() {
                   )}
                 </div>
               </div>
-              <div style={{ fontSize: 12, opacity: 0.8 }}>Créée le {new Date(o.created_at).toLocaleString()}</div>
+              <div style={{ fontSize: 12, opacity: 0.8 }}>Créée le {fmtDate(o.created_at)}</div>
             </div>
           ))}
-          {orders.length === 0 && <div>Aucune commande pour l’instant.</div>}
+          {ordersFiltered.length === 0 && (
+            <div style={{ padding: 16, border: "1px dashed #ddd", borderRadius: 8, textAlign: "center", opacity: .8 }}>
+              Aucune commande ne correspond à “{ordersQuery}”.
+            </div>
+          )}
         </div>
 
         {/* Lignes + Réception */}
@@ -815,7 +906,7 @@ export default function App() {
                     <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{row.site}</td>
                     <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{part ? `${part.sku} — ${part.label}` : row.part_id}</td>
                     <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>{row.qty_on_hand}</td>
-                    <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{new Date(row.updated_at).toLocaleString()}</td>
+                    <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{fmtDate(row.updated_at)}</td>
                   </tr>
                 );
               })}
@@ -832,7 +923,7 @@ export default function App() {
         <section style={{ marginTop: 40 }}>
           <h2>Administration — Affectation des sites</h2>
           <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 8 }}>
-            (Seuls les admins voient ce bloc. L’action appelle la RPC sécurisée <code>set_user_site</code>.)
+            (Visible uniquement pour les admins, via RPC sécurisées)
           </div>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
@@ -871,6 +962,9 @@ export default function App() {
           </table>
         </section>
       )}
+
+      {/* TOASTS */}
+      <Toasts items={toasts} onClose={dismiss} />
     </div>
   );
 }
