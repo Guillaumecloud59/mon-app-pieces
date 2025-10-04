@@ -488,12 +488,12 @@ export default function App() {
     loadProfileAndMaybeUsers();
     loadParts(); loadSuppliers(); loadSupplierRefs(); loadOffers();
     loadOrders(); loadInventory(); loadSites();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
   useEffect(() => {
     if (activeOrderId) { loadOrderItems(activeOrderId); setReceiveSite(activeOrder?.site || mySite || ""); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrderId]);
 
   /** ---------------- GUARDS ---------------- */
@@ -532,13 +532,13 @@ export default function App() {
 
   /** ---------------- UI ---------------- */
   const tabs: { key: TabKey; label: string }[] = useMemo(() => {
-    const base = [
-      { key: "db" as const,        label: "Base de données" },
-      { key: "orders" as const,    label: "Commandes" },
-      { key: "transfer" as const,  label: "Transfert" },
-      { key: "inventory" as const, label: "Inventaire" },
+    const base: { key: TabKey; label: string }[] = [
+      { key: "db",        label: "Base de données" },
+      { key: "orders",    label: "Commandes" },
+      { key: "transfer",  label: "Transfert" },
+      { key: "inventory", label: "Inventaire" },
     ];
-    if (isAdmin) base.push({ key: "admin" as const, label: "Administration" });
+    if (isAdmin) base.push({ key: "admin", label: "Administration" });
     return base;
   }, [isAdmin]);
 
@@ -681,7 +681,7 @@ export default function App() {
 
             {/* OFFRES */}
             <section style={{ marginTop: 32 }}>
-              <h2>Offres (prix / stock)</h2>
+              <h2>Offres (prix / stock){offers ? ` (${offers.length})` : ""}</h2>
               <form onSubmit={addOffer} style={{ display: "grid", gap: 8, gridTemplateColumns: "1.2fr 1.8fr 1fr 1fr auto", alignItems: "end" }}>
                 <div><label>Pièce</label>
                   <select value={offerPartId} onChange={(e) => { setOfferPartId(e.target.value); setOfferRefId(""); }} style={{ width: "100%", padding: 8 }}>
