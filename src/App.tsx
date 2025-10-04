@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
 
-/** Types **/
+/** ---------- Types ---------- */
 type Part = { id: string; sku: string; label: string; created_at?: string };
 type Supplier = { id: string; name: string; site_url?: string | null; created_at?: string };
 type SupplierRef = {
@@ -35,7 +35,7 @@ type InventoryRow = {
 };
 type SiteRow = { id: string; name: string; note?: string | null; created_at: string };
 
-/** ========= Mini toasts ========= **/
+/** ---------- Mini toasts ---------- */
 type ToastKind = "success" | "error" | "info";
 type Toast = { id: string; kind: ToastKind; text: string };
 
@@ -44,11 +44,11 @@ function Toasts({ items, onClose }: { items: Toast[]; onClose: (id: string) => v
     <div style={{ position: "fixed", right: 16, bottom: 16, display: "grid", gap: 8, zIndex: 9999, maxWidth: 360 }}>
       {items.map(t => (
         <div key={t.id}
-             style={{
-               padding: "10px 12px", borderRadius: 10,
-               background: t.kind === "error" ? "#fee2e2" : t.kind === "success" ? "#e7f6ed" : "#eef2ff",
-               color: "#111", boxShadow: "0 4px 14px rgba(0,0,0,.08)", border: "1px solid rgba(0,0,0,.06)"
-             }}>
+          style={{
+            padding: "10px 12px", borderRadius: 10,
+            background: t.kind === "error" ? "#fee2e2" : t.kind === "success" ? "#e7f6ed" : "#eef2ff",
+            color: "#111", boxShadow: "0 4px 14px rgba(0,0,0,.08)", border: "1px solid rgba(0,0,0,.06)"
+          }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
             <div><b style={{ textTransform: "capitalize" }}>{t.kind}</b> — {t.text}</div>
             <button onClick={() => onClose(t.id)} style={{ border: "none", background: "transparent", cursor: "pointer" }}>×</button>
@@ -69,18 +69,22 @@ function useToasts() {
   return { toasts, notify, dismiss };
 }
 
-/** ========= Utilitaires ========= **/
+/** ---------- Utils ---------- */
 function fmtDate(d: string | Date) { try { return new Date(d).toLocaleString(); } catch { return String(d); } }
 type TabKey = "db" | "orders" | "transfer" | "inventory" | "admin";
 const CONDITION_LABEL: Record<InventoryRow["condition"], string> = { neuf: "Neuf", rec: "Reconditionné", occ: "Occasion" };
 const CONDITION_VALUES = ["neuf", "rec", "occ"] as const;
 
-/** ========= App ========= **/
+/** =========================================================
+ *                         APP
+ *  ========================================================= */
 export default function App() {
   /** ---- Auth ---- */
   const [session, setSession] = useState<Session | null>(null);
-  const [authEmail, setAuthEmail] = useState(""); const [authPassword, setAuthPassword] = useState("");
-  const [authLoading, setAuthLoading] = useState(false); const [authReady, setAuthReady] = useState(false);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
   const { toasts, notify, dismiss } = useToasts();
 
   useEffect(() => {
@@ -89,12 +93,23 @@ export default function App() {
     const { data: sub } = supabase.auth.onAuthStateChange((_e, sess) => { setSession(sess); setAuthReady(true); });
     return () => { cancelled = true; sub.subscription.unsubscribe(); };
   }, []);
-  async function signInWithPassword(e: React.FormEvent) { e.preventDefault(); if (!authEmail || !authPassword) return;
-    setAuthLoading(true); const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
-    setAuthLoading(false); if (error) notify(error.message, "error"); }
-  async function signUp(e: React.FormEvent) { e.preventDefault(); if (!authEmail || !authPassword) return;
-    setAuthLoading(true); const { error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
-    setAuthLoading(false); if (error) notify(error.message, "error"); else notify("Compte créé. Connecte-toi.", "success"); }
+  async function signInWithPassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (!authEmail || !authPassword) return;
+    setAuthLoading(true);
+    const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
+    setAuthLoading(false);
+    if (error) notify(error.message, "error");
+  }
+  async function signUp(e: React.FormEvent) {
+    e.preventDefault();
+    if (!authEmail || !authPassword) return;
+    setAuthLoading(true);
+    const { error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
+    setAuthLoading(false);
+    if (error) notify(error.message, "error");
+    else notify("Compte créé. Connecte-toi.", "success");
+  }
   async function signOut() { await supabase.auth.signOut(); }
 
   /** ---- Profil / Admin ---- */
@@ -107,38 +122,52 @@ export default function App() {
   /** ---- Admin: users + suppliers + sites ---- */
   const [allUsers, setAllUsers] = useState<{ id: string; email: string | null; site: string | null }[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [supplierName, setSupplierName] = useState(""); const [supplierUrl, setSupplierUrl] = useState("");
+  const [supplierName, setSupplierName] = useState("");
+  const [supplierUrl, setSupplierUrl] = useState("");
   const [loadingSupplier, setLoadingSupplier] = useState(false);
   const [sites, setSites] = useState<SiteRow[]>([]);
-  const [siteName, setSiteName] = useState(""); const [siteNote, setSiteNote] = useState("");
+  const [siteName, setSiteName] = useState("");
+  const [siteNote, setSiteNote] = useState("");
 
   /** ---- Pièces & Références ---- */
-  const [sku, setSku] = useState(""); const [label, setLabel] = useState("");
-  const [parts, setParts] = useState<Part[]>([]); const [loadingPart, setLoadingPart] = useState(false);
+  const [sku, setSku] = useState("");
+  const [label, setLabel] = useState("");
+  const [parts, setParts] = useState<Part[]>([]);
+  const [loadingPart, setLoadingPart] = useState(false);
   const [partsQuery, setPartsQuery] = useState("");
+
   const [refs, setRefs] = useState<SupplierRef[]>([]);
-  const [selectedPartId, setSelectedPartId] = useState(""); const [selectedSupplierId] = useState("");
-  const [supplierRef, setSupplierRef] = useState(""); const [productUrl, setProductUrl] = useState("");
+  const [selectedPartId, setSelectedPartId] = useState("");
+  const [selectedSupplierId, setSelectedSupplierId] = useState("");
+  const [supplierRef, setSupplierRef] = useState("");
+  const [productUrl, setProductUrl] = useState("");
   const [loadingRef, setLoadingRef] = useState(false);
 
   /** ---- Offres ---- */
   const [offers, setOffers] = useState<Offer[]>([]);
-  const [offerPartId, setOfferPartId] = useState(""); const [offerRefId, setOfferRefId] = useState("");
-  const [offerPrice, setOfferPrice] = useState(""); const [offerQty, setOfferQty] = useState("");
+  const [offerPartId, setOfferPartId] = useState("");
+  const [offerRefId, setOfferRefId] = useState("");
+  const [offerPrice, setOfferPrice] = useState("");
+  const [offerQty, setOfferQty] = useState("");
   const [loadingOffer, setLoadingOffer] = useState(false);
 
   /** ---- Commandes ---- */
   const [orders, setOrders] = useState<Order[]>([]);
   const [ordersQuery, setOrdersQuery] = useState("");
-  const [newOrderSupplierId, setNewOrderSupplierId] = useState(""); const [newOrderSite, setNewOrderSite] = useState("");
-  const [newOrderExternalRef, setNewOrderExternalRef] = useState(""); const [creatingOrder, setCreatingOrder] = useState(false);
+  const [newOrderSupplierId, setNewOrderSupplierId] = useState("");
+  const [newOrderSite, setNewOrderSite] = useState("");
+  const [newOrderExternalRef, setNewOrderExternalRef] = useState("");
+  const [creatingOrder, setCreatingOrder] = useState(false);
   const [activeOrderId, setActiveOrderId] = useState<string>("");
 
   /** ---- Lignes + Réception ---- */
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [receivedByItem, setReceivedByItem] = useState<Record<string, number>>({});
-  const [oiPartId, setOiPartId] = useState(""); const [oiSupplierRef, setOiSupplierRef] = useState("");
-  const [oiQty, setOiQty] = useState(""); const [oiUnitPrice, setOiUnitPrice] = useState(""); const [addingItem, setAddingItem] = useState(false);
+  const [oiPartId, setOiPartId] = useState("");
+  const [oiSupplierRef, setOiSupplierRef] = useState("");
+  const [oiQty, setOiQty] = useState("");
+  const [oiUnitPrice, setOiUnitPrice] = useState("");
+  const [addingItem, setAddingItem] = useState(false);
 
   /** ---- Inventaire (avec état + emplacement) ---- */
   const [inventory, setInventory] = useState<InventoryRow[]>([]);
@@ -147,7 +176,15 @@ export default function App() {
   const [receiveCondByItem, setReceiveCondByItem] = useState<Record<string, InventoryRow["condition"]>>({});
   const [receiveLocByPart, setReceiveLocByPart] = useState<Record<string, string>>({}); // key: `${site}|${part_id}`
 
-  /** ---------------- LOADERS ---------------- */
+  // Filtres & tri inventaire
+  const [invSiteFilter, setInvSiteFilter] = useState<string>("");
+  const [invQuery, setInvQuery] = useState<string>("");
+  const [invCondFilter, setInvCondFilter] = useState<InventoryRow["condition"] | "">("");
+  type InvSortKey = "site" | "part" | "condition" | "qty" | "location" | "updated";
+  const [invSortKey, setInvSortKey] = useState<InvSortKey>("site");
+  const [invSortDir, setInvSortDir] = useState<"asc" | "desc">("asc");
+
+  /** ---------- Loaders ---------- */
   async function loadProfileAndMaybeUsers() {
     if (!session) return;
     const { data: isAdm } = await supabase.rpc("is_admin");
@@ -215,15 +252,16 @@ export default function App() {
   }
   async function addSupplierRef(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedPartId || !supplierRef.trim()) return;
+    if (!selectedPartId || !selectedSupplierId || !supplierRef.trim()) return;
     setLoadingRef(true);
     const { error } = await supabase.from("supplier_part_refs").insert({
-      part_id: selectedPartId, supplier_id: selectedSupplierId || null,
+      part_id: selectedPartId, supplier_id: selectedSupplierId,
       supplier_ref: supplierRef.trim(), product_url: productUrl || null,
     });
     setLoadingRef(false);
     if (error) { notify(error.message, "error"); return; }
-    setSupplierRef(""); setProductUrl(""); await loadSupplierRefs(); notify("Référence liée", "success");
+    setSupplierRef(""); setProductUrl(""); setSelectedSupplierId("");
+    await loadSupplierRefs(); notify("Référence liée", "success");
   }
 
   async function loadOffers() {
@@ -321,11 +359,10 @@ export default function App() {
 
   async function doTransfer(e: React.FormEvent) {
     e.preventDefault();
-    // NOTE : RPC existante ne gère pas l'état. Amélioration ultérieure.
-    notify("Le transfert actuel ne gère pas encore l’état (neuf/rec/occ).", "info");
+    notify("Transfert avec état à venir.", "info");
   }
 
-  /** ---------------- ADMIN ACTIONS ---------------- */
+  /** ---------- Admin actions ---------- */
   async function assignSite(userId: string, siteName: string) {
     if (!siteName) return notify("Choisis un site.", "error");
     const { error } = await supabase.rpc("set_user_site", { target_user: userId, target_site: siteName });
@@ -335,10 +372,9 @@ export default function App() {
     notify("Site assigné", "success");
   }
 
-  /** ---------------- HELPERS ---------------- */
+  /** ---------- Helpers ---------- */
   const activeOrder = useMemo(() => orders.find(o => o.id === activeOrderId), [orders, activeOrderId]);
 
-  // Localisation connue par (site, part_id) depuis l'inventaire
   const knownLocationBySitePart = useMemo(() => {
     const m: Record<string, string> = {};
     for (const row of inventory) {
@@ -355,78 +391,136 @@ export default function App() {
     return Math.max((item.qty || 0) - rec, 0);
   }
 
- async function createReceiptWithItems() {
-  if (!activeOrderId) return;
-  const site = mySite || receiveSite || activeOrder?.site || "";
-  if (!site) { notify("Renseigne un site de réception.", "error"); return; }
+  async function createReceiptWithItems() {
+    if (!activeOrderId) return;
+    const site = mySite || receiveSite || activeOrder?.site || "";
+    if (!site) { notify("Renseigne un site de réception.", "error"); return; }
 
-  // Construire les lignes à réceptionner + contrôles
-  const lines: { oi: OrderItem; qty: number; cond: "neuf" | "rec" | "occ"; loc?: string }[] = [];
-  for (const it of orderItems) {
-    const raw = toReceive[it.id]; if (!raw) continue;
-    const q = Number(raw); if (!Number.isFinite(q) || q <= 0) continue;
-    const max = remainingFor(it);
-    if (q > max) { notify(`Qté pour "${it.part?.sku}" dépasse le restant (${q} > ${max}).`, "error"); return; }
-    const cond = receiveCondByItem[it.id] || "neuf";
+    const lines: { oi: OrderItem; qty: number; cond: InventoryRow["condition"]; loc?: string }[] = [];
+    for (const it of orderItems) {
+      const raw = toReceive[it.id]; if (!raw) continue;
+      const q = Number(raw); if (!Number.isFinite(q) || q <= 0) continue;
+      const max = remainingFor(it);
+      if (q > max) { notify(`Qté pour "${it.part?.sku}" dépasse le restant (${q} > ${max}).`, "error"); return; }
+      const cond = receiveCondByItem[it.id] || "neuf";
+      const locKey = `${site}|${it.part_id}`;
+      const existingLoc = knownLocationBySitePart[locKey];
+      const loc = existingLoc || (receiveLocByPart[locKey] || "").trim() || undefined;
+      if (!existingLoc && !loc) { notify(`Emplacement requis pour ${it.part?.sku} au site ${site}.`, "error"); return; }
+      lines.push({ oi: it, qty: q, cond, loc });
+    }
+    if (lines.length === 0) { notify("Renseigne au moins une quantité à réceptionner.", "error"); return; }
 
-    // on conserve la logique d’emplacement pour l’UI, mais on ne touche plus "inventory" ici
-    const locKey = `${site}|${it.part_id}`;
-    const existingLoc = knownLocationBySitePart[locKey];
-    const loc = existingLoc || (receiveLocByPart[locKey] || "").trim() || undefined;
-    if (!existingLoc && !loc) { notify(`Emplacement requis pour ${it.part?.sku} au site ${site}.`, "error"); return; }
+    const { data: receipt, error: recErr } = await supabase
+      .from("receipts")
+      .insert({ order_id: activeOrderId, site })
+      .select("id")
+      .single();
+    if (recErr) return notify(recErr.message, "error");
 
-    lines.push({ oi: it, qty: q, cond, loc });
+    // >>> IMPORTANT : on envoie état + emplacement pour chaque ligne
+    const payload = lines.map(l => ({
+      receipt_id: receipt!.id,
+      order_item_id: l.oi.id,
+      qty_received: l.qty,
+      condition: l.cond,
+      location: l.loc ?? null,
+    }));
+    const { error: riErr } = await supabase.from("receipt_items").insert(payload);
+    if (riErr) return notify(riErr.message, "error");
+
+    await loadOrderItems(activeOrderId);
+    await loadInventory();
+    await loadOrders();
+    setToReceive({});
+    notify("Réception enregistrée", "success");
   }
-  if (lines.length === 0) { notify("Renseigne au moins une quantité à réceptionner.", "error"); return; }
 
-  // 1) Créer l'en-tête de réception
-  const { data: receipt, error: recErr } = await supabase
-    .from("receipts")
-    .insert({ order_id: activeOrderId, site })
-    .select("id")
-    .single();
-  if (recErr) return notify(recErr.message, "error");
+  // Inventaire : recherche/tri
+  function matchesQuery(row: InventoryRow, q: string) {
+    if (!q) return true;
+    const part = parts.find(p => p.id === row.part_id);
+    const hay = [
+      row.site,
+      row.part_id,
+      part?.sku ?? "",
+      part?.label ?? "",
+      row.location ?? ""
+    ].join(" ").toLowerCase();
+    return hay.includes(q.toLowerCase());
+  }
 
-  // 2) Créer les lignes de réception AVEC état + emplacement
-const payload = lines.map(l => ({
-  receipt_id: receipt!.id,
-  order_item_id: l.oi.id,
-  qty_received: l.qty,
-  condition: l.cond,        // <<< NOUVEAU
-  location: l.loc ?? null,  // <<< NOUVEAU
-}));
-const { error: riErr } = await supabase.from("receipt_items").insert(payload);
-
-  if (riErr) return notify(riErr.message, "error");
-
-  // ⚠️ NE PLUS TOUCHER inventory ici (les triggers/SQL côté serveur s’en chargent)
-
-  // Rafraîchir l’UI
-  await loadOrderItems(activeOrderId);
-  await loadInventory();
-  await loadOrders();
-  setToReceive({});
-  notify("Réception enregistrée", "success");
-}
-
-
-  /** ---------------- Filtres ---------------- */
-  const partsFiltered = useMemo(() => {
-    const q = partsQuery.trim().toLowerCase();
-    if (!q) return parts;
-    return parts.filter(p => (p.sku + " " + p.label).toLowerCase().includes(q));
-  }, [parts, partsQuery]);
-  const ordersFiltered = useMemo(() => {
-    const q = ordersQuery.trim().toLowerCase(); if (!q) return orders;
-    return orders.filter(o =>
-      (o.supplier?.name || "").toLowerCase().includes(q) ||
-      (o.external_ref || "").toLowerCase().includes(q) ||
-      (o.site || "").toLowerCase().includes(q) ||
-      (o.status || "").toLowerCase().includes(q)
+  const inventoryView = useMemo(() => {
+    let rows = inventory.filter(r =>
+      (!invSiteFilter || r.site === invSiteFilter) &&
+      (!invCondFilter || r.condition === invCondFilter) &&
+      matchesQuery(r, invQuery.trim())
     );
-  }, [orders, ordersQuery]);
 
-  /** ---------------- Lifecycle ---------------- */
+    rows = [...rows].sort((a, b) => {
+      const dir = invSortDir === "asc" ? 1 : -1;
+      const partA = parts.find(p => p.id === a.part_id);
+      const partB = parts.find(p => p.id === b.part_id);
+      switch (invSortKey) {
+        case "site": return dir * a.site.localeCompare(b.site);
+        case "condition": return dir * a.condition.localeCompare(b.condition);
+        case "qty": return dir * (a.qty_on_hand - b.qty_on_hand);
+        case "location": return dir * ((a.location || "").localeCompare(b.location || ""));
+        case "updated": return dir * (new Date(a.updated_at).valueOf() - new Date(b.updated_at).valueOf());
+        case "part":
+        default: {
+          const la = `${partA?.sku ?? ""} ${partA?.label ?? ""}`.trim();
+          const lb = `${partB?.sku ?? ""} ${partB?.label ?? ""}`.trim();
+          return dir * la.localeCompare(lb);
+        }
+      }
+    });
+
+    const totals = rows.reduce<Record<string, number>>((acc, r) => {
+      const key = `${r.site} | ${CONDITION_LABEL[r.condition]}`;
+      acc[key] = (acc[key] || 0) + (r.qty_on_hand || 0);
+      return acc;
+    }, {});
+
+    return { rows, totals };
+  }, [inventory, parts, invSiteFilter, invCondFilter, invQuery, invSortKey, invSortDir]);
+
+  async function updateInventoryLocation(row: InventoryRow, newLoc: string) {
+    // Tout utilisateur peut tenter, la RLS autorise pour son site (ou admin).
+    const { error } = await supabase
+      .from("inventory")
+      .update({ location: newLoc || null })
+      .eq("site", row.site)
+      .eq("part_id", row.part_id)
+      .eq("condition", row.condition);
+    if (error) notify(error.message, "error");
+    else { notify("Emplacement mis à jour.", "success"); await loadInventory(); }
+  }
+
+  function exportInventoryCSV() {
+    const headers = ["Site","SKU","Libellé","État","Quantité","Emplacement","MAJ"];
+    const lines = inventoryView.rows.map(r => {
+      const p = parts.find(pp => pp.id === r.part_id);
+      const arr = [
+        r.site,
+        p?.sku ?? r.part_id,
+        p?.label ?? "",
+        CONDITION_LABEL[r.condition],
+        String(r.qty_on_hand ?? 0),
+        r.location ?? "",
+        new Date(r.updated_at).toISOString()
+      ].map(v => `"${String(v).replace(/"/g,'""')}"`);
+      return arr.join(",");
+    });
+    const blob = new Blob([[headers.join(","), ...lines].join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `inventaire_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  /** ---------- Lifecycle ---------- */
   useEffect(() => {
     if (!session) return;
     loadProfileAndMaybeUsers();
@@ -434,12 +528,13 @@ const { error: riErr } = await supabase.from("receipt_items").insert(payload);
     loadOrders(); loadInventory(); loadSites();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
+
   useEffect(() => {
     if (activeOrderId) { loadOrderItems(activeOrderId); setReceiveSite(activeOrder?.site || mySite || ""); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrderId]);
 
-  /** ---------------- TABS ---------------- */
+  /** ---------- Tabs list (no hook) ---------- */
   const tabs: { key: TabKey; label: string }[] = (() => {
     const base: { key: TabKey; label: string }[] = [
       { key: "db",        label: "Base de données" },
@@ -451,7 +546,7 @@ const { error: riErr } = await supabase.from("receipt_items").insert(payload);
     return base;
   })();
 
-  /** ---------------- Guards ---------------- */
+  /** ---------- Guards ---------- */
   if (!authReady) {
     return (<div style={{ maxWidth: 480, margin: "10vh auto", padding: 24 }}>Chargement…<Toasts items={toasts} onClose={dismiss} /></div>);
   }
@@ -470,7 +565,7 @@ const { error: riErr } = await supabase.from("receipt_items").insert(payload);
     );
   }
 
-  /** ---------------- UI ---------------- */
+  /** ---------- UI ---------- */
   function Nav() {
     return (
       <nav style={{ position: "sticky", top: 0, zIndex: 10, background: "white", borderBottom: "1px solid #eee", marginBottom: 16 }}>
@@ -500,10 +595,10 @@ const { error: riErr } = await supabase.from("receipt_items").insert(payload);
       <Nav />
       <div style={{ maxWidth: 1180, margin: "0 auto", padding: 24 }}>
 
-        {/* ========== BASE DE DONNÉES (pièces, références, offres) ========== */}
+        {/* ---------- BASE DE DONNÉES ---------- */}
         {activeTab === "db" && (
           <>
-            {/* PIÈCES */}
+            {/* Pièces */}
             <section style={{ marginTop: 0 }}>
               <div style={{ display: "flex", alignItems: "end", gap: 12, flexWrap: "wrap" }}>
                 <h2 style={{ margin: 0 }}>Pièces</h2>
@@ -517,38 +612,43 @@ const { error: riErr } = await supabase.from("receipt_items").insert(payload);
                 <button disabled={loadingPart} style={{ padding: "10px 16px" }}>{loadingPart ? "Ajout..." : "Ajouter"}</button>
               </form>
               <ul style={{ padding: 0, listStyle: "none", marginTop: 12 }}>
-                {partsFiltered.map((p) => (
+                {parts.filter(p => (p.sku + " " + p.label).toLowerCase().includes(partsQuery.trim().toLowerCase())).map((p) => (
                   <li key={p.id} style={{ padding: 12, border: "1px solid #eee", marginBottom: 8, borderRadius: 8 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                       <div><b>{p.sku}</b> — {p.label}</div>
                     </div>
                   </li>
                 ))}
-                {partsFiltered.length === 0 && (
-                  <li style={{ padding: 16, border: "1px dashed #ddd", borderRadius: 8, textAlign: "center", opacity: .8 }}>
-                    Aucune pièce ne correspond à “{partsQuery}”.
-                  </li>
-                )}
               </ul>
             </section>
 
-            {/* RÉFÉRENCES FOURNISSEUR */}
+            {/* Références fournisseur */}
             <section style={{ marginTop: 32 }}>
               <h2>Références fournisseur</h2>
-              <form onSubmit={addSupplierRef} style={{ display: "grid", gap: 8, gridTemplateColumns: "1.2fr 1fr 2fr auto", alignItems: "end" }}>
+              <form onSubmit={addSupplierRef} style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr 1fr 2fr auto", alignItems: "end" }}>
                 <div><label>Pièce</label>
                   <select value={selectedPartId} onChange={(e) => setSelectedPartId(e.target.value)} style={{ width: "100%", padding: 8 }}>
                     <option value="">— choisir —</option>
                     {parts.map((p) => <option key={p.id} value={p.id}>{p.sku} — {p.label}</option>)}
                   </select>
                 </div>
-                <div><label>Réf fournisseur</label><input value={supplierRef} onChange={(e) => setSupplierRef(e.target.value)} placeholder="ex: X-789" style={{ width: "100%", padding: 8 }} /></div>
-                <div><label>URL produit (opt.)</label><input value={productUrl} onChange={(e) => setProductUrl(e.target.value)} placeholder="https://..." style={{ width: "100%", padding: 8 }} /></div>
+                <div><label>Fournisseur</label>
+                  <select value={selectedSupplierId} onChange={(e) => setSelectedSupplierId(e.target.value)} style={{ width: "100%", padding: 8 }}>
+                    <option value="">— choisir —</option>
+                    {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+                <div><label>Réf fournisseur</label>
+                  <input value={supplierRef} onChange={(e) => setSupplierRef(e.target.value)} placeholder="ex: X-789" style={{ width: "100%", padding: 8 }} />
+                </div>
+                <div><label>URL produit (opt.)</label>
+                  <input value={productUrl} onChange={(e) => setProductUrl(e.target.value)} placeholder="https://..." style={{ width: "100%", padding: 8 }} />
+                </div>
                 <button disabled={loadingRef} style={{ padding: "10px 16px" }}>{loadingRef ? "Ajout..." : "Lier"}</button>
               </form>
             </section>
 
-            {/* OFFRES */}
+            {/* Offres */}
             <section style={{ marginTop: 32 }}>
               <h2>Offres (prix / stock){offers ? ` (${offers.length})` : ""}</h2>
               <form onSubmit={addOffer} style={{ display: "grid", gap: 8, gridTemplateColumns: "1.2fr 1.8fr 1fr 1fr auto", alignItems: "end" }}>
@@ -580,13 +680,18 @@ const { error: riErr } = await supabase.from("receipt_items").insert(payload);
           </>
         )}
 
-        {/* ========== COMMANDES ========== */}
+        {/* ---------- COMMANDES ---------- */}
         {activeTab === "orders" && (
           <section>
             <div style={{ display: "flex", alignItems: "end", gap: 12, flexWrap: "wrap" }}>
               <h2 style={{ margin: 0 }}>Commandes</h2>
               <div style={{ marginLeft: "auto" }}>
-                <input value={ordersQuery} onChange={(e) => setOrdersQuery(e.target.value)} placeholder="Rechercher (fournisseur, site, statut, n°)…" style={{ padding: 8, minWidth: 300 }} />
+                <input
+                  value={ordersQuery}
+                  onChange={(e) => setOrdersQuery(e.target.value)}
+                  placeholder="Rechercher (fournisseur, site, statut, n°)…"
+                  style={{ padding: 8, minWidth: 300 }}
+                />
               </div>
             </div>
 
@@ -612,28 +717,32 @@ const { error: riErr } = await supabase.from("receipt_items").insert(payload);
 
             {/* Liste des commandes */}
             <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-              {ordersFiltered.map((o) => (
-                <div key={o.id} onClick={() => { setActiveOrderId(o.id); setReceiveSite(o.site || mySite || ""); }}
-                  style={{ border: "1px solid #eee", borderRadius: 8, padding: 12, cursor: "pointer", background: activeOrderId === o.id ? "#f0f7ff" : "white" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                    <div><b>{o.supplier?.name || "—"}</b> · {o.site || "—"} {o.external_ref ? <> · <span>#{o.external_ref}</span></> : null}</div>
-                    <div style={{ fontSize: 12, display: "flex", gap: 8, alignItems: "center" }}>
-                      <span style={{ opacity: 0.8 }}>{o.status}</span>
-                      {o.status === "draft" && (
-                        <button onClick={(e) => { e.stopPropagation(); setOrderStatus(o.id, "ordered"); }}>
-                          Passer en “ordered”
-                        </button>
-                      )}
+              {orders
+                .filter(o =>
+                  (o.supplier?.name || "").toLowerCase().includes(ordersQuery.trim().toLowerCase()) ||
+                  (o.external_ref || "").toLowerCase().includes(ordersQuery.trim().toLowerCase()) ||
+                  (o.site || "").toLowerCase().includes(ordersQuery.trim().toLowerCase()) ||
+                  (o.status || "").toLowerCase().includes(ordersQuery.trim().toLowerCase())
+                )
+                .map((o) => (
+                  <div key={o.id}
+                       onClick={() => { setActiveOrderId(o.id); setReceiveSite(o.site || mySite || ""); }}
+                       style={{ border: "1px solid #eee", borderRadius: 8, padding: 12, cursor: "pointer",
+                                background: activeOrderId === o.id ? "#f0f7ff" : "white" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                      <div><b>{o.supplier?.name || "—"}</b> · {o.site || "—"} {o.external_ref ? <> · <span>#{o.external_ref}</span></> : null}</div>
+                      <div style={{ fontSize: 12, display: "flex", gap: 8, alignItems: "center" }}>
+                        <span style={{ opacity: 0.8 }}>{o.status}</span>
+                        {o.status === "draft" && (
+                          <button onClick={(e) => { e.stopPropagation(); setOrderStatus(o.id, "ordered"); }}>
+                            Passer en “ordered”
+                          </button>
+                        )}
+                      </div>
                     </div>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>Créée le {fmtDate(o.created_at)}</div>
                   </div>
-                  <div style={{ fontSize: 12, opacity: 0.8 }}>Créée le {fmtDate(o.created_at)}</div>
-                </div>
-              ))}
-              {ordersFiltered.length === 0 && (
-                <div style={{ padding: 16, border: "1px dashed #ddd", borderRadius: 8, textAlign: "center", opacity: .8 }}>
-                  Aucune commande ne correspond à “{ordersQuery}”.
-                </div>
-              )}
+                ))}
             </div>
 
             {/* Lignes + Réception */}
@@ -649,9 +758,15 @@ const { error: riErr } = await supabase.from("receipt_items").insert(payload);
                         {parts.map(p => <option key={p.id} value={p.id}>{p.sku} — {p.label}</option>)}
                       </select>
                     </div>
-                    <div><label>Réf fournisseur (opt.)</label><input value={oiSupplierRef} onChange={(e) => setOiSupplierRef(e.target.value)} placeholder="ex: X-789" style={{ width: "100%", padding: 8 }} /></div>
-                    <div><label>Qté</label><input type="number" step={1} min={1} value={oiQty} onChange={(e) => setOiQty(e.target.value)} placeholder="ex: 10" style={{ width: "100%", padding: 8 }} /></div>
-                    <div><label>PU (EUR)</label><input type="number" step="0.01" min={0} value={oiUnitPrice} onChange={(e) => setOiUnitPrice(e.target.value)} placeholder="ex: 12.50" style={{ width: "100%", padding: 8 }} /></div>
+                    <div><label>Réf fournisseur (opt.)</label>
+                      <input value={oiSupplierRef} onChange={(e) => setOiSupplierRef(e.target.value)} placeholder="ex: X-789" style={{ width: "100%", padding: 8 }} />
+                    </div>
+                    <div><label>Qté</label>
+                      <input type="number" step={1} min={1} value={oiQty} onChange={(e) => setOiQty(e.target.value)} placeholder="ex: 10" style={{ width: "100%", padding: 8 }} />
+                    </div>
+                    <div><label>PU (EUR)</label>
+                      <input type="number" step="0.01" min={0} value={oiUnitPrice} onChange={(e) => setOiUnitPrice(e.target.value)} placeholder="ex: 12.50" style={{ width: "100%", padding: 8 }} />
+                    </div>
                     <button disabled={addingItem} style={{ padding: "10px 16px" }}>{addingItem ? "Ajout..." : "Ajouter la ligne"}</button>
                   </form>
                 ) : (
@@ -676,7 +791,8 @@ const { error: riErr } = await supabase.from("receipt_items").insert(payload);
                       {orderItems.map(oi => {
                         const rec = receivedByItem[oi.id] || 0;
                         const remaining = Math.max((oi.qty || 0) - rec, 0);
-                        const locKey = `${receiveSite || activeOrder?.site || mySite || ""}|${oi.part_id}`;
+                        const siteUse = receiveSite || activeOrder?.site || mySite || "";
+                        const locKey = `${siteUse}|${oi.part_id}`;
                         const existingLoc = knownLocationBySitePart[locKey];
                         return (
                           <tr key={oi.id}>
@@ -743,17 +859,13 @@ const { error: riErr } = await supabase.from("receipt_items").insert(payload);
           </section>
         )}
 
-        {/* ========== TRANSFERT ========== */}
+        {/* ---------- TRANSFERT ---------- */}
         {activeTab === "transfer" && (
           <section>
             <h2>Transfert de stock</h2>
-            <p style={{ opacity: .8, marginTop: -6 }}>Amélioration à venir : transfert par état & validation d’emplacement.</p>
+            <p style={{ opacity: .8, marginTop: -6 }}>Transfert par état & validation d’emplacement — prochainement.</p>
             <form onSubmit={doTransfer} style={{ display: "grid", gap: 8, gridTemplateColumns: "1.5fr 1fr 1fr 0.8fr auto", alignItems: "end" }}>
-              <div><label>Pièce</label>
-                <select value={""} onChange={() => {}} disabled style={{ width: "100%", padding: 8 }}>
-                  <option>— à venir —</option>
-                </select>
-              </div>
+              <div><label>Pièce</label><input disabled placeholder="—" style={{ width: "100%", padding: 8 }} /></div>
               <div><label>De</label><input disabled placeholder="—" style={{ width: "100%", padding: 8 }} /></div>
               <div><label>Vers</label><input disabled placeholder="—" style={{ width: "100%", padding: 8 }} /></div>
               <div><label>Qté</label><input disabled placeholder="—" style={{ width: "100%", padding: 8 }} /></div>
@@ -762,38 +874,97 @@ const { error: riErr } = await supabase.from("receipt_items").insert(payload);
           </section>
         )}
 
-        {/* ========== INVENTAIRE ========== */}
+        {/* ---------- INVENTAIRE ---------- */}
         {activeTab === "inventory" && (
           <section>
             <h2>Inventaire (par site · pièce · état)</h2>
+
+            {/* Filtres */}
+            <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr 1fr auto", alignItems: "end", marginTop: 8 }}>
+              <div>
+                <label>Site</label>
+                <select value={invSiteFilter} onChange={(e) => setInvSiteFilter(e.target.value)} style={{ width: "100%", padding: 8 }}>
+                  <option value="">Tous</option>
+                  {sites.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label>État</label>
+                <select value={invCondFilter} onChange={(e) => setInvCondFilter(e.target.value as any)} style={{ width: "100%", padding: 8 }}>
+                  <option value="">Tous</option>
+                  {CONDITION_VALUES.map(c => <option key={c} value={c}>{CONDITION_LABEL[c]}</option>)}
+                </select>
+              </div>
+              <div>
+                <label>Recherche</label>
+                <input value={invQuery} onChange={(e) => setInvQuery(e.target.value)} placeholder="SKU, libellé, emplacement…" style={{ width: "100%", padding: 8 }} />
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={exportInventoryCSV} style={{ padding: "10px 16px" }}>Exporter CSV</button>
+              </div>
+            </div>
+
+            {/* Totaux */}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+              {Object.entries(inventoryView.totals).map(([k, v]) => (
+                <div key={k} style={{ padding: "6px 10px", background: "#f8fafc", border: "1px solid #e5e7eb", borderRadius: 999, fontSize: 13 }}>
+                  <b>{k}</b> : {v}
+                </div>
+              ))}
+            </div>
+
+            {/* Tableau */}
             <div style={{ marginTop: 8 }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Site</th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Pièce</th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>État</th>
-                    <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Stock</th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8, minWidth: 140 }}>Emplacement</th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>MAJ</th>
+                    {[
+                      ["site","Site"] as const,
+                      ["part","Pièce"] as const,
+                      ["condition","État"] as const,
+                      ["qty","Stock"] as const,
+                      ["location","Emplacement"] as const,
+                      ["updated","MAJ"] as const,
+                    ].map(([k,label]) => (
+                      <th key={k}
+                          onClick={() => { const kk = k as InvSortKey; setInvSortKey(kk); setInvSortDir(d => (invSortKey === kk ? (d==="asc"?"desc":"asc") : "asc")); }}
+                          style={{ textAlign: k==="qty" ? "right" : "left", borderBottom: "1px solid #eee", padding: 8, cursor: "pointer", userSelect: "none" }}>
+                        {label}{invSortKey===k ? (invSortDir==="asc" ? " ▲" : " ▼") : ""}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {inventory.map((row, i) => {
+                  {inventoryView.rows.map((row, i) => {
                     const part = parts.find(p => p.id === row.part_id);
+                    const low = row.qty_on_hand <= 0;
                     return (
-                      <tr key={`${row.site}-${row.part_id}-${row.condition}-${i}`}>
+                      <tr key={`${row.site}-${row.part_id}-${row.condition}-${i}`} style={{ background: low ? "#fff7f7" : "transparent" }}>
                         <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{row.site}</td>
-                        <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{part ? `${part.sku} — ${part.label}` : row.part_id}</td>
+                        <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
+                          {part ? (<><b>{part.sku}</b> — {part.label}</>) : row.part_id}
+                        </td>
                         <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{CONDITION_LABEL[row.condition]}</td>
                         <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>{row.qty_on_hand}</td>
-                        <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{row.location || "—"}</td>
+                        <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
+                          <input
+                            defaultValue={row.location ?? ""}
+                            onBlur={(e) => {
+                              const v = e.target.value.trim();
+                              if (v !== (row.location ?? "")) updateInventoryLocation(row, v);
+                            }}
+                            placeholder="ex: A-01-03"
+                            style={{ width: "100%", padding: 6 }}
+                          />
+                        </td>
                         <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{fmtDate(row.updated_at)}</td>
                       </tr>
                     );
                   })}
-                  {inventory.length === 0 && (
-                    <tr><td colSpan={6} style={{ padding: 12, textAlign: "center", opacity: 0.7 }}>Aucun stock enregistré.</td></tr>
+                  {inventoryView.rows.length === 0 && (
+                    <tr><td colSpan={6} style={{ padding: 12, textAlign: "center", opacity: 0.7 }}>
+                      Aucun résultat avec ces filtres.
+                    </td></tr>
                   )}
                 </tbody>
               </table>
@@ -801,7 +972,7 @@ const { error: riErr } = await supabase.from("receipt_items").insert(payload);
           </section>
         )}
 
-        {/* ========== ADMINISTRATION ========== */}
+        {/* ---------- ADMINISTRATION ---------- */}
         {activeTab === "admin" && isAdmin && (
           <section>
             <h2>Administration</h2>
@@ -846,7 +1017,7 @@ const { error: riErr } = await supabase.from("receipt_items").insert(payload);
               </table>
             </div>
 
-            {/* Gestion des sites */}
+            {/* Sites */}
             <div style={{ marginTop: 28 }}>
               <h3>Sites</h3>
               <form onSubmit={addSite} style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 2fr auto", alignItems: "end" }}>
@@ -864,7 +1035,7 @@ const { error: riErr } = await supabase.from("receipt_items").insert(payload);
               </ul>
             </div>
 
-            {/* Gestion des fournisseurs */}
+            {/* Fournisseurs */}
             <div style={{ marginTop: 28 }}>
               <h3>Fournisseurs</h3>
               <form onSubmit={addSupplier} style={{ display: "grid", gap: 8, gridTemplateColumns: "2fr 3fr auto", alignItems: "end" }}>
