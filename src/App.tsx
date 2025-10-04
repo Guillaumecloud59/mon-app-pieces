@@ -423,12 +423,6 @@ export default function App() {
     notify("Site assigné", "success");
   }
 
-  /** ---------------- HELPERS / MEMOS ---------------- */
-  const refsByPart = useMemo(() => {
-    const m: Record<string, SupplierRef[]> = {};
-    for (const r of refs) (m[r.part_id] ||= []).push(r);
-    return m;
-  }, [refs]);
 
   const activeOrder = useMemo(() => orders.find(o => o.id === activeOrderId), [orders, activeOrderId]);
 
