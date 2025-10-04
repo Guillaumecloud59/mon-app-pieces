@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
 
-/** Types simples (pour éviter les soucis TS si les colonnes sont nullables) **/
+/** Types **/
 type Part = { id: string; sku: string; label: string; created_at?: string };
 type Supplier = { id: string; name: string; site_url?: string | null; created_at?: string };
 type SupplierRef = {
@@ -48,7 +49,69 @@ type InventoryRow = { site: string; part_id: string; qty_on_hand: number; update
 type SiteRow = { id: string; name: string; note?: string | null; created_at: string };
 
 export default function App() {
-  /** ----------------------- ÉTATS ----------------------- **/
+  /** ----------------------- AUTH ----------------------- **/
+  const [session, setSession] = useState<Session | null>(null);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => setSession(sess));
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  async function signInWithPassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (!authEmail || !authPassword) return;
+    setAuthLoading(true);
+    const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
+    setAuthLoading(false);
+    if (error) alert(error.message);
+  }
+  async function signUp(e: React.FormEvent) {
+    e.preventDefault();
+    if (!authEmail || !authPassword) return;
+    setAuthLoading(true);
+    const { error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
+    setAuthLoading(false);
+    if (error) alert(error.message);
+    else alert("Compte créé. Connecte-toi (ou vérifie tes emails si la confirmation est activée).");
+  }
+  async function signOut() {
+    await supabase.auth.signOut();
+  }
+
+  if (!session) {
+    return (
+      <div style={{ maxWidth: 480, margin: "10vh auto", padding: 24 }}>
+        <h1>Connexion</h1>
+        <form onSubmit={signInWithPassword} style={{ display: "grid", gap: 12 }}>
+          <div>
+            <label>Email</label>
+            <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)}
+                   placeholder="vous@exemple.com" style={{ width: "100%", padding: 10 }} />
+          </div>
+          <div>
+            <label>Mot de passe</label>
+            <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)}
+                   placeholder="••••••••" style={{ width: "100%", padding: 10 }} />
+          </div>
+          <button disabled={authLoading} style={{ padding: "10px 16px" }}>
+            {authLoading ? "Connexion..." : "Se connecter"}
+          </button>
+          <button onClick={signUp} type="button" style={{ padding: "10px 16px" }}>
+            Créer un compte
+          </button>
+        </form>
+        <div style={{ marginTop: 16, fontSize: 12, opacity: 0.7 }}>
+          (Supabase Auth → Email activé, ajoute tes Redirect URLs. Pour tests rapides, tu peux désactiver “Confirm email”.)
+        </div>
+      </div>
+    );
+  }
+
+  /** ----------------------- ÉTATS APP ----------------------- **/
   // Pièces
   const [sku, setSku] = useState(""); const [label, setLabel] = useState("");
   const [parts, setParts] = useState<Part[]>([]); const [loadingPart, setLoadingPart] = useState(false);
@@ -104,7 +167,6 @@ export default function App() {
     if (error) return console.error(error);
     setParts((data || []) as Part[]);
   }
-
   async function addPart(e: React.FormEvent) {
     e.preventDefault();
     if (!sku.trim() || !label.trim()) return;
@@ -120,7 +182,6 @@ export default function App() {
     if (error) return console.error(error);
     setSuppliers((data || []) as Supplier[]);
   }
-
   async function addSupplier(e: React.FormEvent) {
     e.preventDefault();
     if (!supplierName.trim()) return;
@@ -143,7 +204,6 @@ export default function App() {
     if (error) return console.error(error);
     setRefs((data || []) as any);
   }
-
   async function addSupplierRef(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedPartId || !selectedSupplierId || !supplierRef.trim()) return;
@@ -180,7 +240,6 @@ export default function App() {
     if (error) return console.error(error);
     setOffers((data || []) as any);
   }
-
   async function addOffer(e: React.FormEvent) {
     e.preventDefault();
     if (!offerRefId || offerPrice === "") return;
@@ -212,7 +271,6 @@ export default function App() {
     if (error) return console.error(error);
     setOrders((data || []) as any);
   }
-
   async function createOrder(e: React.FormEvent) {
     e.preventDefault();
     if (!newOrderSupplierId || !newOrderSite) return;
@@ -263,7 +321,6 @@ export default function App() {
       setReceivedByItem({});
     }
   }
-
   async function addOrderItem(e: React.FormEvent) {
     e.preventDefault();
     if (!activeOrderId || !oiPartId) return;
@@ -286,8 +343,6 @@ export default function App() {
     setOiPartId(""); setOiSupplierRef(""); setOiQty(""); setOiUnitPrice("");
     loadOrderItems(activeOrderId);
   }
-
-  // Changer statut (verrouiller)
   async function setOrderStatus(orderId: string, next: "draft" | "ordered") {
     const { error } = await supabase.from("orders").update({ status: next }).eq("id", orderId);
     if (error) return alert(error.message);
@@ -305,7 +360,6 @@ export default function App() {
     if (error) return console.error(error);
     setSites((data || []) as any);
   }
-
   async function addSite(e: React.FormEvent) {
     e.preventDefault();
     if (!siteName.trim()) return;
@@ -402,7 +456,6 @@ export default function App() {
     loadInventory();
     loadSites();
   }, []);
-
   useEffect(() => {
     if (activeOrderId) {
       loadOrderItems(activeOrderId);
@@ -414,7 +467,13 @@ export default function App() {
   /** ----------------------- UI ----------------------- **/
   return (
     <div style={{ maxWidth: 1180, margin: "0 auto", padding: 24 }}>
-      <h1>Inventaire pièces (MVP)</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h1>Inventaire pièces (MVP)</h1>
+        <div>
+          <span style={{ marginRight: 8, fontSize: 12, opacity: 0.7 }}>{session.user.email}</span>
+          <button onClick={signOut}>Se déconnecter</button>
+        </div>
+      </div>
 
       {/* PIÈCES */}
       <section style={{ marginTop: 16 }}>
@@ -530,7 +589,7 @@ export default function App() {
           </div>
           <div>
             <label>Qté dispo (opt.)</label>
-            <input type="number" step="1" min={0} value={offerQty}
+            <input type="number" step={1} min={0} value={offerQty}
               onChange={(e) => setOfferQty(e.target.value)} placeholder="ex: 30" style={{ width: "100%", padding: 8 }} />
           </div>
           <button disabled={loadingOffer} style={{ padding: "10px 16px" }}>{loadingOffer ? "Ajout..." : "Enregistrer"}</button>
@@ -593,7 +652,7 @@ export default function App() {
           <div style={{ marginTop: 20 }}>
             <h3>Lignes de la commande sélectionnée</h3>
 
-            {/* Ajout de ligne si la commande est DRAFT */}
+            {/* Ajout de ligne si DRAFT */}
             {activeOrder?.status === "draft" ? (
               <form onSubmit={addOrderItem} style={{ display: "grid", gap: 8, gridTemplateColumns: "1.5fr 1fr 0.8fr 0.8fr auto", alignItems: "end" }}>
                 <div>
