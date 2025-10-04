@@ -417,7 +417,7 @@ export default function App() {
     notify("Site assigné", "success");
   }
 
-  /** ---------------- HELPERS ---------------- */
+  /** ---------------- HELPERS / MEMOS (AVANT LES RETURNS !) ---------------- */
   const refsByPart = useMemo(() => {
     const m: Record<string, SupplierRef[]> = {};
     for (const r of refs) (m[r.part_id] ||= []).push(r);
@@ -467,6 +467,24 @@ export default function App() {
     setToReceive({}); notify("Réception enregistrée", "success");
   }
 
+  // 🔎 Filtres mémoïsés (PLACÉS AVANT LES RETURNS)
+  const partsFiltered = useMemo(() => {
+    const q = partsQuery.trim().toLowerCase();
+    if (!q) return parts;
+    return parts.filter(p => (p.sku + " " + p.label).toLowerCase().includes(q));
+  }, [parts, partsQuery]);
+
+  const ordersFiltered = useMemo(() => {
+    const q = ordersQuery.trim().toLowerCase();
+    if (!q) return orders;
+    return orders.filter(o =>
+      (o.supplier?.name || "").toLowerCase().includes(q) ||
+      (o.external_ref || "").toLowerCase().includes(q) ||
+      (o.site || "").toLowerCase().includes(q) ||
+      (o.status || "").toLowerCase().includes(q)
+    );
+  }, [orders, ordersQuery]);
+
   /** ---------------- LIFECYCLE ---------------- */
   useEffect(() => {
     if (!session) return;
@@ -483,7 +501,12 @@ export default function App() {
 
   /** ---------------- GUARDS ---------------- */
   if (!authReady) {
-    return <div style={{ maxWidth: 480, margin: "10vh auto", padding: 24 }}>Chargement…</div>;
+    return (
+      <div style={{ maxWidth: 480, margin: "10vh auto", padding: 24 }}>
+        Chargement…
+        <Toasts items={toasts} onClose={dismiss} />
+      </div>
+    );
   }
   if (!session) {
     return (
@@ -511,24 +534,6 @@ export default function App() {
   }
 
   /** ---------------- UI ---------------- */
-  // Filtres mémoïsés
-  const partsFiltered = useMemo(() => {
-    const q = partsQuery.trim().toLowerCase();
-    if (!q) return parts;
-    return parts.filter(p => (p.sku + " " + p.label).toLowerCase().includes(q));
-  }, [parts, partsQuery]);
-
-  const ordersFiltered = useMemo(() => {
-    const q = ordersQuery.trim().toLowerCase();
-    if (!q) return orders;
-    return orders.filter(o =>
-      (o.supplier?.name || "").toLowerCase().includes(q) ||
-      (o.external_ref || "").toLowerCase().includes(q) ||
-      (o.site || "").toLowerCase().includes(q) ||
-      (o.status || "").toLowerCase().includes(q)
-    );
-  }, [orders, ordersQuery]);
-
   return (
     <div style={{ maxWidth: 1180, margin: "0 auto", padding: 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
