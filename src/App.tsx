@@ -430,15 +430,6 @@ export default function App() {
     return m;
   }, [refs]);
 
-  const bestOfferByPart = useMemo(() => {
-    const best: Record<string, Offer | undefined> = {};
-    for (const o of offers) {
-      const pid = o.ref?.part?.id; if (!pid) continue;
-      const cur = best[pid]; if (!cur || o.price < cur.price) best[pid] = o;
-    }
-    return best;
-  }, [offers]);
-
   const activeOrder = useMemo(() => orders.find(o => o.id === activeOrderId), [orders, activeOrderId]);
 
   function remainingFor(item: OrderItem) {
@@ -577,7 +568,7 @@ export default function App() {
           </div>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 12, opacity: 0.8 }}>
-              {session.user.email} {mySite ? <span style={{ background:"#eef", padding:"2px 6px", borderRadius:6, marginLeft:6 }}>{mySite}</span> : ""}
+              {session?.user?.email ?? ""} {mySite ? <span style={{ background:"#eef", padding:"2px 6px", borderRadius:6, marginLeft:6 }}>{mySite}</span> : ""}
             </span>
             <button onClick={signOut} style={{ padding: "6px 10px" }}>Déconnexion</button>
           </div>
@@ -620,8 +611,6 @@ export default function App() {
                   <li key={p.id} style={{ padding: 12, border: "1px solid #eee", marginBottom: 8, borderRadius: 8 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                       <div><b>{p.sku}</b> — {p.label}</div>
-                      {/* meilleure offre */}
-                      {/* On garde l’indicateur dans la liste des pièces */}
                     </div>
                   </li>
                 ))}
