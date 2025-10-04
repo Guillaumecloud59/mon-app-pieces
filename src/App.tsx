@@ -387,9 +387,16 @@ export default function App() {
     .single();
   if (recErr) return notify(recErr.message, "error");
 
-  // 2) Créer les lignes de réception
-  const payload = lines.map(l => ({ receipt_id: receipt!.id, order_item_id: l.oi.id, qty_received: l.qty }));
-  const { error: riErr } = await supabase.from("receipt_items").insert(payload);
+  // 2) Créer les lignes de réception AVEC état + emplacement
+const payload = lines.map(l => ({
+  receipt_id: receipt!.id,
+  order_item_id: l.oi.id,
+  qty_received: l.qty,
+  condition: l.cond,        // <<< NOUVEAU
+  location: l.loc ?? null,  // <<< NOUVEAU
+}));
+const { error: riErr } = await supabase.from("receipt_items").insert(payload);
+
   if (riErr) return notify(riErr.message, "error");
 
   // ⚠️ NE PLUS TOUCHER inventory ici (les triggers/SQL côté serveur s’en chargent)
