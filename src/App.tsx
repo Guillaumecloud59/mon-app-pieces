@@ -355,65 +355,53 @@ export default function App() {
     return Math.max((item.qty || 0) - rec, 0);
   }
 
-  async function createReceiptWithItems() {
-    if (!activeOrderId) return;
-    const site = mySite || receiveSite || activeOrder?.site || "";
-    if (!site) { notify("Renseigne un site de réception.", "error"); return; }
+ async function createReceiptWithItems() {
+  if (!activeOrderId) return;
+  const site = mySite || receiveSite || activeOrder?.site || "";
+  if (!site) { notify("Renseigne un site de réception.", "error"); return; }
 
-    const lines: { oi: OrderItem; qty: number; cond: InventoryRow["condition"]; loc?: string }[] = [];
-    for (const it of orderItems) {
-      const raw = toReceive[it.id]; if (!raw) continue;
-      const q = Number(raw); if (!Number.isFinite(q) || q <= 0) continue;
-      const max = remainingFor(it);
-      if (q > max) { notify(`Qté pour "${it.part?.sku}" dépasse le restant (${q} > ${max}).`, "error"); return; }
-      const cond = receiveCondByItem[it.id] || "neuf";
-      const locKey = `${site}|${it.part_id}`;
-      const existingLoc = knownLocationBySitePart[locKey];
-      const loc = existingLoc || (receiveLocByPart[locKey] || "").trim() || undefined;
-      if (!existingLoc && !loc) { notify(`Emplacement requis pour ${it.part?.sku} au site ${site}.`, "error"); return; }
-      lines.push({ oi: it, qty: q, cond, loc });
-    }
-    if (lines.length === 0) { notify("Renseigne au moins une quantité à réceptionner.", "error"); return; }
+  // Construire les lignes à réceptionner + contrôles
+  const lines: { oi: OrderItem; qty: number; cond: "neuf" | "rec" | "occ"; loc?: string }[] = [];
+  for (const it of orderItems) {
+    const raw = toReceive[it.id]; if (!raw) continue;
+    const q = Number(raw); if (!Number.isFinite(q) || q <= 0) continue;
+    const max = remainingFor(it);
+    if (q > max) { notify(`Qté pour "${it.part?.sku}" dépasse le restant (${q} > ${max}).`, "error"); return; }
+    const cond = receiveCondByItem[it.id] || "neuf";
 
-    // 1) Trace réception
-    const { data: receipt, error: recErr } = await supabase.from("receipts").insert({ order_id: activeOrderId, site }).select("id").single();
-    if (recErr) return notify(recErr.message, "error");
+    // on conserve la logique d’emplacement pour l’UI, mais on ne touche plus "inventory" ici
+    const locKey = `${site}|${it.part_id}`;
+    const existingLoc = knownLocationBySitePart[locKey];
+    const loc = existingLoc || (receiveLocByPart[locKey] || "").trim() || undefined;
+    if (!existingLoc && !loc) { notify(`Emplacement requis pour ${it.part?.sku} au site ${site}.`, "error"); return; }
 
-    const payload = lines.map(l => ({ receipt_id: receipt!.id, order_item_id: l.oi.id, qty_received: l.qty }));
-    const { error: riErr } = await supabase.from("receipt_items").insert(payload);
-    if (riErr) return notify(riErr.message, "error");
-
-    // 2) Mise à jour inventaire par (site, part_id, condition) + emplacement si absent
-    for (const l of lines) {
-      if (!l.oi.part_id) continue;
-      const { data: existing, error: selErr } = await supabase
-        .from("inventory")
-        .select("site, part_id, condition, qty_on_hand, location")
-        .eq("site", site).eq("part_id", l.oi.part_id).eq("condition", l.cond)
-        .maybeSingle();
-      if (selErr) { notify(selErr.message, "error"); continue; }
-
-      if (existing) {
-        const upd: any = { qty_on_hand: Number(existing.qty_on_hand || 0) + l.qty };
-        if (!existing.location && l.loc) upd.location = l.loc;
-        const { error: upErr } = await supabase
-          .from("inventory")
-          .update(upd)
-          .eq("site", site).eq("part_id", l.oi.part_id).eq("condition", l.cond);
-        if (upErr) notify(upErr.message, "error");
-      } else {
-        const ins: any = { site, part_id: l.oi.part_id, condition: l.cond, qty_on_hand: l.qty, location: l.loc || null };
-        const { error: insErr } = await supabase.from("inventory").insert(ins);
-        if (insErr) notify(insErr.message, "error");
-      }
-    }
-
-    await loadOrderItems(activeOrderId);
-    await loadInventory();
-    await loadOrders();
-    setToReceive({});
-    notify("Réception enregistrée + inventaire mis à jour", "success");
+    lines.push({ oi: it, qty: q, cond, loc });
   }
+  if (lines.length === 0) { notify("Renseigne au moins une quantité à réceptionner.", "error"); return; }
+
+  // 1) Créer l'en-tête de réception
+  const { data: receipt, error: recErr } = await supabase
+    .from("receipts")
+    .insert({ order_id: activeOrderId, site })
+    .select("id")
+    .single();
+  if (recErr) return notify(recErr.message, "error");
+
+  // 2) Créer les lignes de réception
+  const payload = lines.map(l => ({ receipt_id: receipt!.id, order_item_id: l.oi.id, qty_received: l.qty }));
+  const { error: riErr } = await supabase.from("receipt_items").insert(payload);
+  if (riErr) return notify(riErr.message, "error");
+
+  // ⚠️ NE PLUS TOUCHER inventory ici (les triggers/SQL côté serveur s’en chargent)
+
+  // Rafraîchir l’UI
+  await loadOrderItems(activeOrderId);
+  await loadInventory();
+  await loadOrders();
+  setToReceive({});
+  notify("Réception enregistrée", "success");
+}
+
 
   /** ---------------- Filtres ---------------- */
   const partsFiltered = useMemo(() => {
