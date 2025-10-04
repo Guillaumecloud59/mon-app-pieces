@@ -54,11 +54,24 @@ export default function App() {
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => setSession(sess));
-    return () => sub.subscription.unsubscribe();
+    let cancelled = false;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!cancelled) {
+        setSession(data.session);
+        setAuthReady(true);
+      }
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
+      setSession(sess);
+      setAuthReady(true);
+    });
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   async function signInWithPassword(e: React.FormEvent) {
@@ -78,10 +91,11 @@ export default function App() {
     if (error) alert(error.message);
     else alert("Compte créé. Connecte-toi (ou vérifie tes emails si la confirmation est activée).");
   }
-  async function signOut() {
-    await supabase.auth.signOut();
-  }
+  async function signOut() { await supabase.auth.signOut(); }
 
+  if (!authReady) {
+    return <div style={{ maxWidth: 480, margin: "10vh auto", padding: 24 }}>Chargement…</div>;
+  }
   if (!session) {
     return (
       <div style={{ maxWidth: 480, margin: "10vh auto", padding: 24 }}>
@@ -105,7 +119,7 @@ export default function App() {
           </button>
         </form>
         <div style={{ marginTop: 16, fontSize: 12, opacity: 0.7 }}>
-          (Supabase Auth → Email activé, ajoute tes Redirect URLs. Pour tests rapides, tu peux désactiver “Confirm email”.)
+          (Vérifie dans Supabase Auth : Email activé + Redirect URLs. Pour tests, tu peux désactiver “Confirm email”.)
         </div>
       </div>
     );
