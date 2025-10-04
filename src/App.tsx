@@ -127,21 +127,38 @@ export default function App() {
 
   /** ---------------- LOADERS ---------------- */
   async function loadProfileAndMaybeUsers() {
-    if (!session) return;
-    const { data: prof, error } = await supabase.from("profiles").select("admin, site").eq("id", session.user.id).single();
-    if (!error && prof) {
-      setIsAdmin(!!prof.admin);
-      setMySite(prof.site || "");
-      if (prof.site) {
-        setNewOrderSite(prof.site);
-        setReceiveSite((prev) => prev || prof.site);
-      }
-      if (prof.admin) {
-        const { data, error: e2 } = await supabase.rpc("list_users");
-        if (!e2 && data) setAllUsers(data as any);
-      }
+  if (!session) return;
+
+  // 1) Vérifie via la RPC is_admin()
+  const { data: isAdm, error: eAdm } = await supabase.rpc("is_admin");
+  if (!eAdm && typeof isAdm === "boolean") {
+    setIsAdmin(isAdm);
+  }
+
+  // 2) Récupère aussi ton site depuis profiles (lecture de ta propre ligne)
+  const { data: prof, error } = await supabase
+    .from("profiles")
+    .select("admin, site")
+    .eq("id", session.user.id)
+    .single();
+
+  if (!error && prof) {
+    // aligne avec la vérité RPC au cas où
+    setIsAdmin(isAdm ?? !!prof.admin);
+    setMySite(prof.site || "");
+    if (prof.site) {
+      setNewOrderSite(prof.site);
+      setReceiveSite((prev) => prev || prof.site);
     }
   }
+
+  // 3) Si admin → charge la liste des users via list_users()
+  if (isAdm) {
+    const { data, error: e2 } = await supabase.rpc("list_users");
+    if (!e2 && data) setAllUsers(data as any);
+  }
+}
+
 
   async function loadParts() {
     const { data, error } = await supabase.from("parts").select("*").order("created_at", { ascending: false });
