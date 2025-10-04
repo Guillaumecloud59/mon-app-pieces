@@ -29,7 +29,7 @@ type InventoryRow = { site: string; part_id: string; qty_on_hand: number; update
 type SiteRow = { id: string; name: string; note?: string | null; created_at: string };
 
 export default function App() {
-  /** ---------------- AUTH (déclaré en premier) ---------------- */
+  /** ---------------- AUTH ---------------- */
   const [session, setSession] = useState<Session | null>(null);
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
@@ -66,7 +66,14 @@ export default function App() {
   }
   async function signOut() { await supabase.auth.signOut(); }
 
-  /** --------------- ÉTATS APP (toujours déclarés avant tout return) --------------- */
+  /** ---------------- APP STATES ---------------- */
+  // Profil courant / Admin
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [mySite, setMySite] = useState("");
+
+  // Admin: liste des users
+  const [allUsers, setAllUsers] = useState<{ id: string; email: string | null; site: string | null }[]>([]);
+
   // Pièces
   const [sku, setSku] = useState(""); const [label, setLabel] = useState("");
   const [parts, setParts] = useState<Part[]>([]); const [loadingPart, setLoadingPart] = useState(false);
@@ -90,8 +97,10 @@ export default function App() {
 
   // Commandes
   const [orders, setOrders] = useState<Order[]>([]);
-  const [newOrderSupplierId, setNewOrderSupplierId] = useState(""); const [newOrderSite, setNewOrderSite] = useState("");
-  const [newOrderExternalRef, setNewOrderExternalRef] = useState(""); const [creatingOrder, setCreatingOrder] = useState(false);
+  const [newOrderSupplierId, setNewOrderSupplierId] = useState("");
+  const [newOrderSite, setNewOrderSite] = useState("");
+  const [newOrderExternalRef, setNewOrderExternalRef] = useState("");
+  const [creatingOrder, setCreatingOrder] = useState(false);
   const [activeOrderId, setActiveOrderId] = useState<string>("");
 
   // Lignes + réception
@@ -116,7 +125,24 @@ export default function App() {
   const [transferTo, setTransferTo] = useState("");
   const [transferQty, setTransferQty] = useState("");
 
-  /** ---------------- LOADERS (gérés pour ne tourner qu’une fois loggé) ---------------- */
+  /** ---------------- LOADERS ---------------- */
+  async function loadProfileAndMaybeUsers() {
+    if (!session) return;
+    const { data: prof, error } = await supabase.from("profiles").select("admin, site").eq("id", session.user.id).single();
+    if (!error && prof) {
+      setIsAdmin(!!prof.admin);
+      setMySite(prof.site || "");
+      if (prof.site) {
+        setNewOrderSite(prof.site);
+        setReceiveSite((prev) => prev || prof.site);
+      }
+      if (prof.admin) {
+        const { data, error: e2 } = await supabase.rpc("list_users");
+        if (!e2 && data) setAllUsers(data as any);
+      }
+    }
+  }
+
   async function loadParts() {
     const { data, error } = await supabase.from("parts").select("*").order("created_at", { ascending: false });
     if (!error) setParts((data || []) as Part[]);
@@ -217,18 +243,21 @@ export default function App() {
   }
   async function createOrder(e: React.FormEvent) {
     e.preventDefault();
-    if (!newOrderSupplierId || !newOrderSite) return;
+    // Si mySite est défini, on force le site (RLS protège quand même)
+    const siteToUse = mySite || newOrderSite;
+    if (!newOrderSupplierId || !siteToUse) return;
     setCreatingOrder(true);
     const { data, error } = await supabase
       .from("orders")
       .insert({
-        supplier_id: newOrderSupplierId, site: newOrderSite,
+        supplier_id: newOrderSupplierId, site: siteToUse,
         external_ref: newOrderExternalRef || null, status: "draft",
       })
       .select("id").single();
     setCreatingOrder(false);
     if (error) return alert(error.message);
-    setNewOrderExternalRef(""); setNewOrderSite(""); setNewOrderSupplierId("");
+    setNewOrderExternalRef(""); if (!mySite) setNewOrderSite("");
+    setNewOrderSupplierId("");
     await loadOrders();
     if (data?.id) setActiveOrderId(data.id as string);
   }
@@ -246,7 +275,6 @@ export default function App() {
     if (error) return alert(error.message);
     setOrderItems((data || []) as any);
 
-    // total déjà reçu par ligne
     if ((data || []).length) {
       const ids = (data as any[]).map(d => d.id);
       const { data: recAgg } = await supabase
@@ -297,7 +325,8 @@ export default function App() {
     if (!siteName.trim()) return;
     const { error } = await supabase.from("sites").insert({ name: siteName.trim(), note: siteNote || null });
     if (error) return alert(error.message);
-    setSiteName(""); setSiteNote(""); loadSites();
+    setSiteName(""); setSiteNote("");
+    loadSites();
   }
 
   async function doTransfer(e: React.FormEvent) {
@@ -310,6 +339,21 @@ export default function App() {
     });
     if (error) return alert(error.message);
     setTransferQty(""); await loadInventory(); alert("Transfert effectué ✅");
+  }
+
+  /** ---------------- ADMIN ACTIONS ---------------- */
+  async function assignSite(userId: string, siteName: string) {
+    if (!siteName) return alert("Choisis un site.");
+    const { error } = await supabase.rpc("set_user_site", { target_user: userId, target_site: siteName });
+    if (error) return alert(error.message);
+    // Rafraîchir localement
+    setAllUsers(prev => prev.map(u => u.id === userId ? { ...u, site: siteName } : u));
+    if (session?.user.id === userId) {
+      setMySite(siteName);
+      setNewOrderSite(siteName);
+      setReceiveSite(siteName);
+    }
+    alert("Site assigné ✅");
   }
 
   /** ---------------- HELPERS ---------------- */
@@ -337,7 +381,7 @@ export default function App() {
 
   async function createReceiptWithItems() {
     if (!activeOrderId) return;
-    const site = receiveSite || activeOrder?.site || "";
+    const site = mySite || receiveSite || activeOrder?.site || "";
     if (!site) { alert("Renseigne un site de réception."); return; }
 
     const lines: { order_item_id: string; qty_received: number }[] = [];
@@ -362,20 +406,21 @@ export default function App() {
     setToReceive({}); alert("Réception enregistrée ✅");
   }
 
-  /** --------------- LIFECYCLE (ne charger qu’une fois loggé) --------------- */
+  /** ---------------- LIFECYCLE ---------------- */
   useEffect(() => {
     if (!session) return;
+    loadProfileAndMaybeUsers();
     loadParts(); loadSuppliers(); loadSupplierRefs(); loadOffers();
     loadOrders(); loadInventory(); loadSites();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
   useEffect(() => {
-    if (activeOrderId) { loadOrderItems(activeOrderId); setReceiveSite(activeOrder?.site || ""); }
+    if (activeOrderId) { loadOrderItems(activeOrderId); setReceiveSite(activeOrder?.site || mySite || ""); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrderId]);
 
-  /** --------------- GARDES D’AFFICHAGE APRÈS TOUS LES HOOKS --------------- */
+  /** ---------------- GUARDS ---------------- */
   if (!authReady) {
     return <div style={{ maxWidth: 480, margin: "10vh auto", padding: 24 }}>Chargement…</div>;
   }
@@ -403,13 +448,15 @@ export default function App() {
     );
   }
 
-  /** ----------------------- UI APP ----------------------- **/
+  /** ---------------- UI ---------------- */
   return (
     <div style={{ maxWidth: 1180, margin: "0 auto", padding: 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1>Inventaire pièces (MVP)</h1>
         <div>
-          <span style={{ marginRight: 8, fontSize: 12, opacity: 0.7 }}>{session.user.email}</span>
+          <span style={{ marginRight: 8, fontSize: 12, opacity: 0.7 }}>
+            {session.user.email} {mySite ? ` · ${mySite}` : ""}
+          </span>
           <button onClick={signOut}>Se déconnecter</button>
         </div>
       </div>
@@ -548,10 +595,14 @@ export default function App() {
           </div>
           <div>
             <label>Site de livraison</label>
-            <select value={newOrderSite} onChange={(e) => setNewOrderSite(e.target.value)} style={{ width: "100%", padding: 8 }}>
-              <option value="">— choisir —</option>
-              {sites.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-            </select>
+            {mySite ? (
+              <input value={mySite} disabled style={{ width: "100%", padding: 8, background: "#f7f7f7" }} />
+            ) : (
+              <select value={newOrderSite} onChange={(e) => setNewOrderSite(e.target.value)} style={{ width: "100%", padding: 8 }}>
+                <option value="">— choisir —</option>
+                {sites.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+              </select>
+            )}
           </div>
           <div>
             <label>N° commande (opt.)</label>
@@ -564,7 +615,7 @@ export default function App() {
         <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
           {orders.map((o) => (
             <div key={o.id}
-                 onClick={() => { setActiveOrderId(o.id); setReceiveSite(o.site || ""); }}
+                 onClick={() => { setActiveOrderId(o.id); setReceiveSite(o.site || mySite || ""); }}
                  style={{ border: "1px solid #eee", borderRadius: 8, padding: 12, cursor: "pointer",
                           background: activeOrderId === o.id ? "#f0f7ff" : "white" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
@@ -670,9 +721,13 @@ export default function App() {
             <div style={{ marginTop: 16, display: "grid", gap: 8, gridTemplateColumns: "1fr auto" }}>
               <div>
                 <label>Site de réception</label>
-                <input value={receiveSite} onChange={(e) => setReceiveSite(e.target.value)} placeholder="ex: Atelier A" style={{ width: "100%", padding: 8 }} />
+                {mySite ? (
+                  <input value={mySite} disabled style={{ width: "100%", padding: 8, background: "#f7f7f7" }} />
+                ) : (
+                  <input value={receiveSite} onChange={(e) => setReceiveSite(e.target.value)} placeholder="ex: Atelier A" style={{ width: "100%", padding: 8 }} />
+                )}
                 <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
-                  (laissé vide → on utilisera le site de la commande)
+                  (si un site t’est assigné, il est appliqué automatiquement)
                 </div>
               </div>
               <div style={{ alignSelf: "end" }}>
@@ -754,6 +809,51 @@ export default function App() {
           </table>
         </div>
       </section>
+
+      {/* ADMIN — AFFECTATION DES SITES */}
+      {isAdmin && (
+        <section style={{ marginTop: 40 }}>
+          <h2>Administration — Affectation des sites</h2>
+          <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 8 }}>
+            (Seuls les admins voient ce bloc. L’action appelle la RPC sécurisée <code>set_user_site</code>.)
+          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Utilisateur</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Site actuel</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Nouveau site</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {allUsers.map(u => (
+                <tr key={u.id}>
+                  <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{u.email || u.id}</td>
+                  <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{u.site || "—"}</td>
+                  <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
+                    <select id={`site-${u.id}`} defaultValue={u.site || ""} style={{ padding: 6, minWidth: 180 }}>
+                      <option value="">— choisir —</option>
+                      {sites.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                    </select>
+                  </td>
+                  <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
+                    <button onClick={() => {
+                      const sel = (document.getElementById(`site-${u.id}`) as HTMLSelectElement);
+                      assignSite(u.id, sel.value);
+                    }}>
+                      Assigner
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {allUsers.length === 0 && (
+                <tr><td colSpan={4} style={{ padding: 12, opacity: 0.7 }}>Aucun utilisateur trouvé.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </section>
+      )}
     </div>
   );
 }
