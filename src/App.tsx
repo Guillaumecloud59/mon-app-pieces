@@ -11,7 +11,6 @@ type SupplierRef = {
   product_url?: string | null; created_at?: string;
   part?: Part; supplier?: Supplier;
 };
-type Offer = { id: number; supplier_part_ref_id: string; price: number; currency: string; qty_available?: number | null; noted_at: string };
 type Order = {
   id: string; supplier_id?: string | null; site?: string | null;
   status: "draft" | "ordered" | "partially_received" | "received" | "cancelled";
@@ -221,15 +220,7 @@ export default function App() {
     setSiteName(""); setSiteNote(""); await loadSites(); notify("Site ajouté", "success");
   }
 
-  async function loadSupplierRefs() {
-    const { data, error } = await supabase
-      .from("supplier_part_refs")
-      .select(`id, part_id, supplier_id, supplier_ref, product_url, created_at,
-               part:parts(id, sku, label),
-               supplier:suppliers(id, name, site_url)`)
-      .order("created_at", { ascending: false });
-    if (error) notify(error.message, "error"); else setRefs((data || []) as any);
-  }
+
   async function addSupplierRef(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedPartId || !selectedSupplierId || !supplierRef.trim()) return;
@@ -244,10 +235,6 @@ export default function App() {
     await loadSupplierRefs(); notify("Référence liée", "success");
   }
 
-  async function loadOffers() {
-    const { data, error } = await supabase.from("offers").select("*").order("noted_at", { ascending: false });
-    if (error) notify(error.message, "error"); else setOffers((data || []) as any);
-  }
 
   async function loadOrders() {
     const { data, error } = await supabase
@@ -340,7 +327,7 @@ export default function App() {
       }
     } else notify("Référence validée. Aucune commande concernée à relier.", "success");
 
-    await loadSupplierRefs(); await loadPendingRefs();
+    await loadPendingRefs();
     // vider cache de la pièce concernée (pour recharger avec la nouvelle réf)
     setRefsByPart(prev => {
       const copy = { ...prev }; Object.keys(copy).forEach(k => { if (k === partId) delete copy[k]; });
@@ -631,8 +618,9 @@ async function searchBySupplierRef() {
   useEffect(() => {
     if (!session) return;
     loadProfileAndMaybeUsers();
-    loadParts(); loadSuppliers(); loadSupplierRefs(); loadOffers();
-    loadOrders(); loadInventory(); loadSites();
+    loadParts(); loadSuppliers();
+loadOrders(); loadInventory(); loadSites();
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
   useEffect(() => {
