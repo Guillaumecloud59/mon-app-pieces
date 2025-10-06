@@ -111,13 +111,8 @@ export default function App() {
   const [sites, setSites] = useState<SiteRow[]>([]);
   const [siteName, setSiteName] = useState(""); const [siteNote, setSiteNote] = useState("");
 
-  const [refs, setRefs] = useState<SupplierRef[]>([]);
   const [selectedPartId, setSelectedPartId] = useState(""); const [selectedSupplierId, setSelectedSupplierId] = useState("");
   const [supplierRef, setSupplierRef] = useState(""); const [productUrl, setProductUrl] = useState(""); const [loadingRef, setLoadingRef] = useState(false);
-
-  const [offers, setOffers] = useState<Offer[]>([]);
-  const [offerPartId, setOfferPartId] = useState(""); const [offerRefId, setOfferRefId] = useState("");
-  const [offerPrice, setOfferPrice] = useState(""); const [offerQty, setOfferQty] = useState(""); const [loadingOffer, setLoadingOffer] = useState(false);
 
   /** ---- Cache “fournisseurs & prix” par pièce (chargé à la demande) ---- */
   type PartRefsBundle = {
@@ -454,50 +449,6 @@ export default function App() {
   }
 
   /** ---- Recherche par réf fournisseur (globale) ---- */
-  async function searchBySupplierRef() {
-    const q = sprSearch.trim();
-    if (!q) { setSprResults([]); return; }
-    setSprSearching(true);
-
-    const { data: exactData, error: exactErr } = await supabase
-      .from("supplier_part_refs")
-      .select(`id, part_id, supplier_id, supplier_ref, product_url,
-               part:parts(id, sku, label),
-               supplier:suppliers(id, name, site_url)`)
-      .eq("supplier_ref", q)
-      .limit(25);
-    let rows = (exactData || []) as SupplierRef[];
-    if (exactErr) notify(exactErr.message, "error");
-
-    if (!rows.length) {
-      const { data: likeData, error: likeErr } = await supabase
-        .from("supplier_part_refs")
-        .select(`id, part_id, supplier_id, supplier_ref, product_url,
-                 part:parts(id, sku, label),
-                 supplier:suppliers(id, name, site_url)`)
-        .like("supplier_ref", `%${q}%`)
-        .limit(25);
-      if (likeErr) notify(likeErr.message, "error");
-      rows = (likeData || []) as SupplierRef[];
-    }
-
-    const ids = rows.map(r => r.id);
-    let latestMap: Record<string, { price?: number|null; date?: string|null }> = {};
-    if (ids.length) {
-      const { data: offData } = await supabase
-        .from("offers")
-        .select("supplier_part_ref_id, price, noted_at")
-        .in("supplier_part_ref_id", ids)
-        .order("noted_at", { ascending: false });
-      (offData || []).forEach(o => {
-        const key = o.supplier_part_ref_id as string;
-        if (!latestMap[key]) latestMap[key] = { price: o.price, date: o.noted_at };
-      });
-    }
-
-    setSprResults(rows.map(r => ({ ref: r, part: r.part || null, supplier: r.supplier || null, latest: latestMap[r.id] })));
-    setSprSearching(false);
-  }
 
   /** ---- Charger refs + dernier prix d’une pièce (lazy) ---- */
   async function loadSupplierRefsForPart(partId: string) {
@@ -509,7 +460,12 @@ export default function App() {
                supplier:suppliers(id, name, site_url)`)
       .eq("part_id", partId).order("created_at", { ascending: false });
     if (refsErr) { notify(refsErr.message, "error"); return; }
-    const refsList = (refsData || []) as SupplierRef[];
+    const refsList = ((refsData || []) as any[]).map(r => ({
+  ...r,
+  part: Array.isArray(r.part) ? r.part[0] : r.part,
+  supplier: Array.isArray(r.supplier) ? r.supplier[0] : r.supplier,
+})) as SupplierRef[];
+
     const refIds = refsList.map(r => r.id);
     let latestByRefId: PartRefsBundle["latestByRefId"] = {};
     if (refIds.length) {
@@ -527,6 +483,80 @@ export default function App() {
     setRefsByPart(prev => ({ ...prev, [partId]: { refs: refsList, latestByRefId } }));
   }
 
+async function searchBySupplierRef() {
+  const q = sprSearch.trim();
+  if (!q) { setSprResults([]); return; }
+  setSprSearching(true);
+
+  // 1) tentative de correspondance exacte
+  const { data: exactData, error: exactErr } = await supabase
+    .from("supplier_part_refs")
+    .select(`id, part_id, supplier_id, supplier_ref, product_url,
+             part:parts(id, sku, label),
+             supplier:suppliers(id, name, site_url)`)
+    .eq("supplier_ref", q)
+    .limit(25);
+
+  // normaliser: part/supplier peuvent revenir sous forme de tableaux
+  let rows = ((exactData || []) as any[]).map(r => ({
+    ...r,
+    part: Array.isArray(r.part) ? r.part[0] : r.part,
+    supplier: Array.isArray(r.supplier) ? r.supplier[0] : r.supplier,
+  })) as SupplierRef[];
+
+  if (exactErr) notify(exactErr.message, "error");
+
+  // 2) si rien en exact, on tente un LIKE
+  if (!rows.length) {
+    const { data: likeData, error: likeErr } = await supabase
+      .from("supplier_part_refs")
+      .select(`id, part_id, supplier_id, supplier_ref, product_url,
+               part:parts(id, sku, label),
+               supplier:suppliers(id, name, site_url)`)
+      .like("supplier_ref", `%${q}%`)
+      .limit(25);
+
+    if (likeErr) notify(likeErr.message, "error");
+
+    rows = ((likeData || []) as any[]).map(r => ({
+      ...r,
+      part: Array.isArray(r.part) ? r.part[0] : r.part,
+      supplier: Array.isArray(r.supplier) ? r.supplier[0] : r.supplier,
+    })) as SupplierRef[];
+  }
+
+  // 3) récupérer le dernier prix pour ces références (agrégat côté client)
+  const ids = rows.map(r => r.id);
+  let latestMap: Record<string, { price?: number | null; date?: string | null }> = {};
+  if (ids.length) {
+    const { data: offData, error: offErr } = await supabase
+      .from("offers")
+      .select("supplier_part_ref_id, price, noted_at")
+      .in("supplier_part_ref_id", ids)
+      .order("noted_at", { ascending: false });
+
+    if (offErr) {
+      notify(offErr.message, "error");
+    } else {
+      (offData || []).forEach(o => {
+        const key = o.supplier_part_ref_id as string;
+        // garde la plus récente (la première grâce au order desc)
+        if (!latestMap[key]) latestMap[key] = { price: o.price, date: o.noted_at };
+      });
+    }
+  }
+
+  // 4) construire les résultats pour l'UI
+  setSprResults(rows.map(r => ({
+    ref: r,
+    part: r.part || null,
+    supplier: r.supplier || null,
+    latest: latestMap[r.id],
+  })));
+  setSprSearching(false);
+}
+
+  
   /** ---- Inventaire : vue + regroupement ---- */
   function invMatchesQuery(row: InventoryRow, q: string) {
     if (!q) return true;
