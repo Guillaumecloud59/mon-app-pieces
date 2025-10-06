@@ -620,8 +620,6 @@ async function searchBySupplierRef() {
   loadProfileAndMaybeUsers();
   loadParts();
   loadSuppliers();
-  // loadSupplierRefs();  // ← à supprimer
-  // loadOffers();        // ← déjà supprimé
   loadOrders();
   loadInventory();
   loadSites();
