@@ -616,13 +616,18 @@ async function searchBySupplierRef() {
 
   /** ---- Lifecycle ---- */
   useEffect(() => {
-    if (!session) return;
-    loadProfileAndMaybeUsers();
-    loadParts(); loadSuppliers();
-loadOrders(); loadInventory(); loadSites();
-
+  if (!session) return;
+  loadProfileAndMaybeUsers();
+  loadParts();
+  loadSuppliers();
+  // loadSupplierRefs();  // ← à supprimer
+  // loadOffers();        // ← déjà supprimé
+  loadOrders();
+  loadInventory();
+  loadSites();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session]);
+}, [session]);
+
   useEffect(() => {
     if (activeOrderId) { loadOrderItems(activeOrderId); setReceiveSite(activeOrder?.site || mySite || ""); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
