@@ -221,19 +221,50 @@ export default function App() {
   }
 
 
-  async function addSupplierRef(e: React.FormEvent) {
-    e.preventDefault();
-    if (!selectedPartId || !selectedSupplierId || !supplierRef.trim()) return;
-    setLoadingRef(true);
-    const { error } = await supabase.from("supplier_part_refs").insert({
-      part_id: selectedPartId, supplier_id: selectedSupplierId,
-      supplier_ref: supplierRef.trim(), product_url: productUrl || null,
-    });
-    setLoadingRef(false);
-    if (error) return notify(error.message, "error");
-    setSupplierRef(""); setProductUrl(""); setSelectedSupplierId("");
-    await loadSupplierRefs(); notify("Référence liée", "success");
+ async function addSupplierRef(e: React.FormEvent) {
+  e.preventDefault();
+
+  // contrôles simples
+  if (!selectedPartId) { notify("Choisis une pièce.", "error"); return; }
+  if (!selectedSupplierId) { notify("Choisis un fournisseur.", "error"); return; }
+  if (!supplierRef.trim()) { notify("Saisis une référence fournisseur.", "error"); return; }
+
+  const partId = selectedPartId; // on capture avant reset pour invalider le cache de cette pièce
+
+  setLoadingRef(true);
+  const { error } = await supabase.from("supplier_part_refs").insert({
+    part_id: partId,
+    supplier_id: selectedSupplierId,
+    supplier_ref: supplierRef.trim(),
+    product_url: productUrl.trim() ? productUrl.trim() : null,
+  });
+  setLoadingRef(false);
+
+  if (error) {
+    notify(error.message, "error");
+    return;
   }
+
+  // reset du formulaire
+  setSelectedSupplierId("");
+  setSupplierRef("");
+  setProductUrl("");
+
+  // Invalidation du cache de refs pour cette pièce (pour forcer un rechargement propre)
+  setRefsByPart(prev => {
+    const next = { ...prev };
+    delete next[partId];
+    return next;
+  });
+
+  // Si le sous-menu fournisseurs de cette pièce est ouvert quelque part, on recharge immédiatement
+  if (expand[`db|${partId}`] || Object.keys(expand).some(k => k.startsWith("spr|") && k.includes(partId))) {
+    await loadSupplierRefsForPart(partId);
+  }
+
+  notify("Référence fournisseur ajoutée", "success");
+}
+
 
 
   async function loadOrders() {
