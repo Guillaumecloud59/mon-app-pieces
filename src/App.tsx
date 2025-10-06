@@ -942,186 +942,273 @@ const ordersDone = useMemo(
 
         {/* ================= Commandes ================= */}
         {activeTab === "orders" && (
-          <section>
-            <div style={{ display: "flex", alignItems: "end", gap: 12, flexWrap: "wrap" }}>
-              <h2 style={{ margin: 0 }}>Commandes</h2>
-              <div style={{ marginLeft: "auto" }}>
-                <input value={ordersQuery} onChange={(e) => setOrdersQuery(e.target.value)} placeholder="Rechercher (fournisseur, site, statut, n°)…" style={{ padding: 8, minWidth: 300 }} />
-              </div>
+  <section>
+    <div style={{ display: "flex", alignItems: "end", gap: 12, flexWrap: "wrap" }}>
+      <h2 style={{ margin: 0 }}>Commandes</h2>
+      <div style={{ marginLeft: "auto" }}>
+        <input
+          value={ordersQuery}
+          onChange={(e) => setOrdersQuery(e.target.value)}
+          placeholder="Rechercher (fournisseur, site, statut, n°, SKU, réf fournisseur)…"
+          style={{ padding: 8, minWidth: 320 }}
+        />
+      </div>
+    </div>
+
+    {/* Créer commande */}
+    <form
+      onSubmit={createOrder}
+      style={{ display: "grid", gap: 8, gridTemplateColumns: "1.5fr 1fr 1fr auto", alignItems: "end", marginTop: 10 }}
+    >
+      <div>
+        <label>Fournisseur</label>
+        <select
+          value={newOrderSupplierId}
+          onChange={(e) => setNewOrderSupplierId(e.target.value)}
+          style={{ width: "100%", padding: 8 }}
+        >
+          <option value="">— choisir —</option>
+          {suppliers.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label>Site de livraison</label>
+        {mySite ? (
+          <input value={mySite} disabled style={{ width: "100%", padding: 8, background: "#f7f7f7" }} />
+        ) : (
+          <select
+            value={newOrderSite}
+            onChange={(e) => setNewOrderSite(e.target.value)}
+            style={{ width: "100%", padding: 8 }}
+          >
+            <option value="">— choisir —</option>
+            {sites.map((s) => (
+              <option key={s.id} value={s.name}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+      <div>
+        <label>N° commande (opt.)</label>
+        <input
+          value={newOrderExternalRef}
+          onChange={(e) => setNewOrderExternalRef(e.target.value)}
+          placeholder="ex: PO-2025-001"
+          style={{ width: "100%", padding: 8 }}
+        />
+      </div>
+      <button disabled={creatingOrder} style={{ padding: "10px 16px" }}>
+        {creatingOrder ? "Création..." : "Créer commande"}
+      </button>
+    </form>
+
+    {/* Sélecteurs calculés */}
+    {(() => {
+      const q = ordersQuery.trim().toLowerCase();
+      const match = (o: OrderOverview) =>
+        !q ||
+        (o.supplier_name || "").toLowerCase().includes(q) ||
+        (o.external_ref || "").toLowerCase().includes(q) ||
+        (o.site || "").toLowerCase().includes(q) ||
+        (o.status || "").toLowerCase().includes(q) ||
+        (o.part_skus || "").toLowerCase().includes(q) ||
+        (o.supplier_refs || "").toLowerCase().includes(q);
+
+      const ordersActive = orders.filter((o) =>
+        ["draft", "ordered", "partially_received"].includes(o.status)
+      );
+      const ordersDone = orders.filter((o) =>
+        ["received", "cancelled"].includes(o.status)
+      );
+
+      return (
+        <>
+          {/* EN COURS */}
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>En cours</div>
+            <div style={{ display: "grid", gap: 8 }}>
+              {ordersActive.filter(match).map((o) => (
+                <div
+                  key={o.id}
+                  onClick={() => {
+                    setActiveOrderId(o.id);
+                    setReceiveSite(o.site || mySite || "");
+                  }}
+                  style={{
+                    border: "1px solid #eee",
+                    borderRadius: 8,
+                    padding: 12,
+                    cursor: "pointer",
+                    background: activeOrderId === o.id ? "#f0f7ff" : "white",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                    <div>
+                      <b>{o.supplier_name || "—"}</b> · {o.site || "—"}
+                      {o.external_ref ? (
+                        <>
+                          {" "}
+                          · <span>#{o.external_ref}</span>
+                        </>
+                      ) : null}
+                      <div style={{ fontSize: 12, opacity: 0.8 }}>
+                        Reçu {o.qty_received} / {o.qty_ordered}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 12, display: "flex", gap: 8, alignItems: "center" }}>
+                      <span style={{ opacity: 0.8 }}>{o.status}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {ordersActive.filter(match).length === 0 && (
+                <div style={{ opacity: 0.7 }}>Aucune commande en cours.</div>
+              )}
+            </div>
+          </div>
+
+          {/* TERMINÉES */}
+          <div style={{ marginTop: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ fontWeight: 700 }}>Terminées</div>
+              <button onClick={() => setShowDone((v) => !v)} style={{ padding: "4px 8px" }}>
+                {showDone ? "Masquer" : "Afficher"}
+              </button>
             </div>
 
-            {/* Créer commande */}
-            <form onSubmit={createOrder} style={{ display: "grid", gap: 8, gridTemplateColumns: "1.5fr 1fr 1fr auto", alignItems: "end", marginTop: 10 }}>
-              <div><label>Fournisseur</label>
-                <select value={newOrderSupplierId} onChange={(e) => setNewOrderSupplierId(e.target.value)} style={{ width: "100%", padding: 8 }}>
-                  <option value="">— choisir —</option>
-                  {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-              </div>
-              <div><label>Site de livraison</label>
-                {mySite ? <input value={mySite} disabled style={{ width: "100%", padding: 8, background: "#f7f7f7" }} /> : (
-                  <select value={newOrderSite} onChange={(e) => setNewOrderSite(e.target.value)} style={{ width: "100%", padding: 8 }}>
-                    <option value="">— choisir —</option>
-                    {sites.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                  </select>
+            {showDone ? (
+              <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                {ordersDone.filter(match).map((o) => (
+                  <div
+                    key={o.id}
+                    onClick={() => {
+                      setActiveOrderId(o.id);
+                      setReceiveSite(o.site || mySite || "");
+                    }}
+                    style={{
+                      border: "1px solid #eee",
+                      borderRadius: 8,
+                      padding: 12,
+                      cursor: "pointer",
+                      background: activeOrderId === o.id ? "#f0f7ff" : "white",
+                      opacity: 0.85,
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                      <div>
+                        <b>{o.supplier_name || "—"}</b> · {o.site || "—"}
+                        {o.external_ref ? (
+                          <>
+                            {" "}
+                            · <span>#{o.external_ref}</span>
+                          </>
+                        ) : null}
+                        <div style={{ fontSize: 12, opacity: 0.8 }}>
+                          Reçu {o.qty_received} / {o.qty_ordered}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.8 }}>{o.status}</div>
+                    </div>
+                  </div>
+                ))}
+                {ordersDone.filter(match).length === 0 && (
+                  <div style={{ opacity: 0.7 }}>Aucune commande terminée.</div>
                 )}
               </div>
-              <div><label>N° commande (opt.)</label><input value={newOrderExternalRef} onChange={(e) => setNewOrderExternalRef(e.target.value)} placeholder="ex: PO-2025-001" style={{ width: "100%", padding: 8 }} /></div>
-              <button disabled={creatingOrder} style={{ padding: "10px 16px" }}>{creatingOrder ? "Création..." : "Créer commande"}</button>
-            </form>
-
-            {/* Liste commandes */}
-            {/* EN COURS */}
-<div style={{ marginTop: 12 }}>
-  <div style={{ fontWeight: 700, marginBottom: 6 }}>En cours</div>
-  <div style={{ display: "grid", gap: 8 }}>
-    {ordersActive
-      .filter(/* le filtre avec .includes(q) ci-dessus */)
-      .map((o) => (
-        <div key={o.id}
-          onClick={() => { setActiveOrderId(o.id); setReceiveSite(o.site || mySite || ""); }}
-          style={{ border: "1px solid #eee", borderRadius: 8, padding: 12, cursor: "pointer",
-                   background: activeOrderId === o.id ? "#f0f7ff" : "white" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-            <div>
-              <b>{o.supplier_name || "—"}</b> · {o.site || "—"}
-              {o.external_ref ? <> · <span>#{o.external_ref}</span></> : null}
-              <div style={{ fontSize: 12, opacity: .8 }}>
-                Reçu {o.qty_received} / {o.qty_ordered}
-              </div>
-            </div>
-            <div style={{ fontSize: 12, display: "flex", gap: 8, alignItems: "center" }}>
-              <span style={{ opacity: 0.8 }}>{o.status}</span>
-            </div>
+            ) : null}
           </div>
-        </div>
-      ))}
-    {ordersActive.length === 0 && <div style={{ opacity:.7 }}>Aucune commande en cours.</div>}
-  </div>
-</div>
 
-{/* TERMINÉES */}
-<div style={{ marginTop: 16 }}>
-  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-    <div style={{ fontWeight: 700 }}>Terminées</div>
-    <button onClick={() => setShowDone(v => !v)} style={{ padding: "4px 8px" }}>
-      {showDone ? "Masquer" : "Afficher"}
-    </button>
-  </div>
+          {/* Lignes + Réception de la commande active */}
+          {activeOrderId ? (
+            <div style={{ marginTop: 20 }}>
+              <h3>Lignes de la commande sélectionnée</h3>
 
-  {showDone && (
-    <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
-      {ordersDone
-        .filter(/* le même filtre .includes(q) */)
-        .map((o) => (
-          <div key={o.id}
-            onClick={() => { setActiveOrderId(o.id); setReceiveSite(o.site || mySite || ""); }}
-            style={{ border: "1px solid #eee", borderRadius: 8, padding: 12, cursor: "pointer",
-                    background: activeOrderId === o.id ? "#f0f7ff" : "white", opacity: .85 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <div>
-                <b>{o.supplier_name || "—"}</b> · {o.site || "—"}
-                {o.external_ref ? <> · <span>#{o.external_ref}</span></> : null}
-                <div style={{ fontSize: 12, opacity: .8 }}>
-                  Reçu {o.qty_received} / {o.qty_ordered}
-                </div>
-              </div>
-              <div style={{ fontSize: 12, opacity: 0.8 }}>{o.status}</div>
-            </div>
-          </div>
-        ))}
-      {ordersDone.length === 0 && <div style={{ opacity:.7 }}>Aucune commande terminée.</div>}
-    </div>
-  )}
-</div>
-
-                {/* Tableau réception */}
-                <div style={{ marginTop: 12 }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr>
-                        <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Pièce</th>
-                        <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Qté cmd</th>
-                        <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Déjà reçue</th>
-                        <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Restant</th>
-                        <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>État</th>
-                        <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8, minWidth: 160 }}>Emplacement</th>
-                        <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Qté à réceptionner</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {orderItems.map(oi => {
-                        const rec = receivedByItem[oi.id] || 0;
-                        const remaining = Math.max((oi.qty || 0) - rec, 0);
-                        const siteUse = receiveSite || activeOrder?.site || mySite || "";
-                        const locKey = `${siteUse}|${oi.part_id}`;
-                        const existingLoc = knownLocationBySitePart[locKey];
-                        return (
-                          <tr key={oi.id}>
-                            <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
-                              {oi.part ? (<>{oi.part?.sku} — {oi.part?.label}</>) : (<span style={{ color:"#a00" }}>À référencer</span>)}
-                            </td>
-                            <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>{oi.qty}</td>
-                            <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>{rec}</td>
-                            <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>{remaining}</td>
-                            <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
-                              <select
-                                value={receiveCondByItem[oi.id] || "neuf"}
-                                onChange={(e) => setReceiveCondByItem({ ...receiveCondByItem, [oi.id]: e.target.value as InventoryRow["condition"] })}
-                                style={{ padding: 6 }}
-                              >
-                                {CONDITION_VALUES.map(c => <option key={c} value={c}>{CONDITION_LABEL[c]}</option>)}
-                              </select>
-                            </td>
-                            <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
-                              {existingLoc ? (
-                                <input value={existingLoc} disabled style={{ width: "100%", padding: 6, background: "#f7f7f7" }} />
-                              ) : (
-                                <input
-                                  value={receiveLocByPart[locKey] || ""}
-                                  onChange={(e) => setReceiveLocByPart({ ...receiveLocByPart, [locKey]: e.target.value })}
-                                  placeholder="ex: A-01-03"
-                                  style={{ width: "100%", padding: 6 }}
-                                />
-                              )}
-                            </td>
-                            <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>
-                              <input
-                                type="number" step={1} min={0} max={remaining}
-                                value={toReceive[oi.id] || ""}
-                                onChange={(e) => setToReceive({ ...toReceive, [oi.id]: e.target.value })}
-                                placeholder="0"
-                                style={{ width: 90, padding: 6, textAlign: "right" }}
-                              />
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {orderItems.length === 0 && (
-                        <tr><td colSpan={7} style={{ padding: 12, textAlign: "center", opacity: 0.7 }}>Aucune ligne pour l’instant.</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div style={{ marginTop: 16, display: "grid", gap: 8, gridTemplateColumns: "1fr auto" }}>
+              {activeOrder?.status === "draft" ? (
+                <form
+                  onSubmit={addOrderItem}
+                  style={{
+                    display: "grid",
+                    gap: 8,
+                    gridTemplateColumns: "1.5fr 1fr 0.8fr 0.8fr auto",
+                    alignItems: "end",
+                  }}
+                >
                   <div>
-                    <label>Site de réception</label>
-                    {mySite ? (
-                      <input value={mySite} disabled style={{ width: "100%", padding: 8, background: "#f7f7f7" }} />
-                    ) : (
-                      <input value={receiveSite} onChange={(e) => setReceiveSite(e.target.value)} placeholder="ex: Atelier A" style={{ width: "100%", padding: 8 }} />
-                    )}
-                    <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>(si un site t’est assigné, il est appliqué automatiquement)</div>
+                    <label>Pièce</label>
+                    <select
+                      value={oiPartId}
+                      onChange={(e) => {
+                        setOiPartId(e.target.value);
+                      }}
+                      style={{ width: "100%", padding: 8 }}
+                    >
+                      <option value="">— choisir —</option>
+                      {parts.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.sku} — {p.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                  <div style={{ alignSelf: "end" }}>
-                    <button onClick={createReceiptWithItems} style={{ padding: "10px 16px" }}>Enregistrer la réception</button>
+                  <div>
+                    <label>Réf fournisseur</label>
+                    <input
+                      value={oiSupplierRef}
+                      onChange={(e) => setOiSupplierRef(e.target.value)}
+                      placeholder="ex: X-789"
+                      style={{ width: "100%", padding: 8 }}
+                    />
                   </div>
+                  <div>
+                    <label>Qté</label>
+                    <input
+                      type="number"
+                      step={1}
+                      min={1}
+                      value={oiQty}
+                      onChange={(e) => setOiQty(e.target.value)}
+                      placeholder="ex: 10"
+                      style={{ width: "100%", padding: 8 }}
+                    />
+                  </div>
+                  <div>
+                    <label>PU (EUR)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      value={oiUnitPrice}
+                      onChange={(e) => setOiUnitPrice(e.target.value)}
+                      placeholder="ex: 12.50"
+                      style={{ width: "100%", padding: 8 }}
+                    />
+                  </div>
+                  <button style={{ padding: "10px 16px" }}>Ajouter la ligne</button>
+                </form>
+              ) : (
+                <div style={{ marginTop: 12, opacity: 0.8 }}>
+                  Ajout de lignes désactivé (commande non “draft”).
                 </div>
+              )}
+
+              {/* Tableau réception */}
+              <div style={{ marginTop: 12 }}>
+                {/* ... garde ici TA TABLE existante de réception + le bouton "Enregistrer la réception" ... */}
               </div>
-            )}
-          </section>
-        )}
+            </div>
+          ) : null}
+        </>
+      );
+    })()}
+  </section>
+)}
+
 
         {/* ================= Transfert ================= */}
         {activeTab === "transfer" && (
