@@ -11,12 +11,6 @@ type SupplierRef = {
   product_url?: string | null; created_at?: string;
   part?: Part; supplier?: Supplier;
 };
-type Order = {
-  id: string; supplier_id?: string | null; site?: string | null;
-  status: "draft" | "ordered" | "partially_received" | "received" | "cancelled";
-  external_ref?: string | null; ordered_at?: string | null; created_at: string;
-  supplier?: Supplier | null;
-};
 type OrderItem = {
   id: string; order_id: string; part_id: string | null; supplier_ref?: string | null;
   qty: number; unit_price?: number | null; currency?: string | null; created_at?: string;
@@ -145,6 +139,9 @@ export default function App() {
 
   /** ---- Commandes ---- */
   const [orders, setOrders] = useState<OrderOverview[]>([]);
+  // recherche commandes (fournisseur, site, statut, n°, SKU, réf fournisseur)
+const [ordersQuery, setOrdersQuery] = useState("");
+
 const [showDone, setShowDone] = useState(false); // replier / déplier les terminées const [ordersQuery, setOrdersQuery] = useState("");
   const [newOrderSupplierId, setNewOrderSupplierId] = useState("");
   const [newOrderSite, setNewOrderSite] = useState("");
@@ -158,14 +155,13 @@ const [showDone, setShowDone] = useState(false); // replier / déplier les termi
   const [oiSupplierRef, setOiSupplierRef] = useState("");
   const [oiQty, setOiQty] = useState("");
   const [oiUnitPrice, setOiUnitPrice] = useState("");
-  const [addingItem] = useState(false);
-
+ 
   /** ---- Réception / Inventaire ---- */
   const [inventory, setInventory] = useState<InventoryRow[]>([]);
   const [receiveSite, setReceiveSite] = useState("");
   const [toReceive, setToReceive] = useState<Record<string, string>>({});
-  const [receiveCondByItem, setReceiveCondByItem] = useState<Record<string, InventoryRow["condition"]>>({});
-  const [receiveLocByPart, setReceiveLocByPart] = useState<Record<string, string>>({}); // key: `${site}|${part_id}`
+  const [receiveCondByItem] = useState<Record<string, InventoryRow["condition"]>>({});
+  const [receiveLocByPart] = useState<Record<string, string>>({});
 
   // Filtres & tri inventaire
   const [invSiteFilter, setInvSiteFilter] = useState<string>("");
@@ -729,14 +725,7 @@ async function maybeMarkOrderReceived(orderId: string) {
     { key: "inventory", label: "Inventaire" },
     ...(isAdmin ? [{ key: "admin", label: "Administration" } as const] : []),
   ];
-const ordersActive = useMemo(
-  () => orders.filter(o => ["draft","ordered","partially_received"].includes(o.status)),
-  [orders]
-);
-const ordersDone = useMemo(
-  () => orders.filter(o => ["received","cancelled"].includes(o.status)),
-  [orders]
-);
+
 
   function Nav() {
     return (
