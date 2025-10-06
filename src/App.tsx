@@ -32,6 +32,22 @@ type PendingRef = {
   note?: string | null; created_by: string; created_at: string; supplier?: Supplier | null;
 };
 
+type OrderOverview = {
+  id: string;
+  supplier_id?: string | null;
+  supplier_name?: string | null;
+  site?: string | null;
+  status: "draft" | "ordered" | "partially_received" | "received" | "cancelled";
+  external_ref?: string | null;
+  ordered_at?: string | null;
+  created_at: string;
+  qty_ordered: number;
+  qty_received: number;
+  part_skus?: string | null;
+  supplier_refs?: string | null;
+};
+
+
 /** =================== UI utils =================== */
 type ToastKind = "success" | "error" | "info";
 type Toast = { id: string; kind: ToastKind; text: string };
@@ -128,8 +144,8 @@ export default function App() {
   const [sprSearching, setSprSearching] = useState(false);
 
   /** ---- Commandes ---- */
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [ordersQuery, setOrdersQuery] = useState("");
+  const [orders, setOrders] = useState<OrderOverview[]>([]);
+const [showDone, setShowDone] = useState(false); // replier / déplier les terminées const [ordersQuery, setOrdersQuery] = useState("");
   const [newOrderSupplierId, setNewOrderSupplierId] = useState("");
   const [newOrderSite, setNewOrderSite] = useState("");
   const [newOrderExternalRef, setNewOrderExternalRef] = useState("");
@@ -268,13 +284,15 @@ export default function App() {
 
 
   async function loadOrders() {
-    const { data, error } = await supabase
-      .from("orders")
-      .select(`id, supplier_id, site, status, external_ref, ordered_at, created_at,
-               supplier:suppliers(id, name, site_url)`)
-      .order("created_at", { ascending: false });
-    if (error) notify(error.message, "error"); else setOrders((data || []) as any);
-  }
+  const { data, error } = await supabase
+    .from("order_overview_v")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) { notify(error.message, "error"); return; }
+  setOrders((data || []) as OrderOverview[]);
+}
+
   async function createOrder(e: React.FormEvent) {
     e.preventDefault();
     const siteToUse = mySite || newOrderSite;
@@ -456,6 +474,7 @@ export default function App() {
 
     await loadOrderItems(activeOrderId); await loadInventory(); await loadOrders();
     setToReceive({}); notify("Réception enregistrée", "success");
+    await maybeMarkOrderReceived(activeOrderId);
   }
   async function updateInventoryLocation(row: InventoryRow, newLoc: string) {
     const { error } = await supabase
@@ -574,6 +593,30 @@ async function searchBySupplierRef() {
   setSprSearching(false);
 }
 
+async function maybeMarkOrderReceived(orderId: string) {
+  if (!orderId) return;
+  const { data, error } = await supabase
+    .from("order_overview_v")
+    .select("qty_ordered, qty_received, status")
+    .eq("id", orderId)
+    .maybeSingle();
+
+  if (error || !data) return;
+
+  const allReceived = (data.qty_ordered || 0) > 0 && (data.qty_received || 0) >= (data.qty_ordered || 0);
+  if (allReceived && data.status !== "received") {
+    const { error: updErr } = await supabase
+      .from("orders")
+      .update({ status: "received" })
+      .eq("id", orderId);
+    if (!updErr) {
+      notify("Commande marquée « reçue »", "success");
+      await loadOrders();
+    }
+  }
+}
+
+
   
   /** ---- Inventaire : vue + regroupement ---- */
   function invMatchesQuery(row: InventoryRow, q: string) {
@@ -686,6 +729,14 @@ async function searchBySupplierRef() {
     { key: "inventory", label: "Inventaire" },
     ...(isAdmin ? [{ key: "admin", label: "Administration" } as const] : []),
   ];
+const ordersActive = useMemo(
+  () => orders.filter(o => ["draft","ordered","partially_received"].includes(o.status)),
+  [orders]
+);
+const ordersDone = useMemo(
+  () => orders.filter(o => ["received","cancelled"].includes(o.status)),
+  [orders]
+);
 
   function Nav() {
     return (
@@ -711,6 +762,7 @@ async function searchBySupplierRef() {
     );
   }
 
+  
   /** ---- Sous-table Fournisseurs & Prix (réutilisable) ---- */
   function SuppliersTableForPart({ partId }: { partId: string }) {
     const bundle = refsByPart[partId];
@@ -919,62 +971,69 @@ async function searchBySupplierRef() {
             </form>
 
             {/* Liste commandes */}
-            <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-              {orders
-                .filter(o =>
-                  (o.supplier?.name || "").toLowerCase().includes(ordersQuery.trim().toLowerCase()) ||
-                  (o.external_ref || "").toLowerCase().includes(ordersQuery.trim().toLowerCase()) ||
-                  (o.site || "").toLowerCase().includes(ordersQuery.trim().toLowerCase()) ||
-                  (o.status || "").toLowerCase().includes(ordersQuery.trim().toLowerCase())
-                )
-                .map((o) => (
-                  <div key={o.id}
-                       onClick={() => { setActiveOrderId(o.id); setReceiveSite(o.site || mySite || ""); }}
-                       style={{ border: "1px solid #eee", borderRadius: 8, padding: 12, cursor: "pointer",
-                                background: activeOrderId === o.id ? "#f0f7ff" : "white" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                      <div><b>{o.supplier?.name || "—"}</b> · {o.site || "—"} {o.external_ref ? <> · <span>#{o.external_ref}</span></> : null}</div>
-                      <div style={{ fontSize: 12, display: "flex", gap: 8, alignItems: "center" }}>
-                        <span style={{ opacity: 0.8 }}>{o.status}</span>
-                        {o.status === "draft" && (
-                          <button onClick={(e) => { e.stopPropagation(); setOrderStatus(o.id, "ordered"); }}>
-                            Passer en “ordered”
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <div style={{ fontSize: 12, opacity: 0.8 }}>Créée le {fmtDate(o.created_at)}</div>
-                  </div>
-                ))}
+            {/* EN COURS */}
+<div style={{ marginTop: 12 }}>
+  <div style={{ fontWeight: 700, marginBottom: 6 }}>En cours</div>
+  <div style={{ display: "grid", gap: 8 }}>
+    {ordersActive
+      .filter(/* le filtre avec .includes(q) ci-dessus */)
+      .map((o) => (
+        <div key={o.id}
+          onClick={() => { setActiveOrderId(o.id); setReceiveSite(o.site || mySite || ""); }}
+          style={{ border: "1px solid #eee", borderRadius: 8, padding: 12, cursor: "pointer",
+                   background: activeOrderId === o.id ? "#f0f7ff" : "white" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+            <div>
+              <b>{o.supplier_name || "—"}</b> · {o.site || "—"}
+              {o.external_ref ? <> · <span>#{o.external_ref}</span></> : null}
+              <div style={{ fontSize: 12, opacity: .8 }}>
+                Reçu {o.qty_received} / {o.qty_ordered}
+              </div>
             </div>
+            <div style={{ fontSize: 12, display: "flex", gap: 8, alignItems: "center" }}>
+              <span style={{ opacity: 0.8 }}>{o.status}</span>
+            </div>
+          </div>
+        </div>
+      ))}
+    {ordersActive.length === 0 && <div style={{ opacity:.7 }}>Aucune commande en cours.</div>}
+  </div>
+</div>
 
-            {/* Lignes + Réception */}
-            {activeOrderId && (
-              <div style={{ marginTop: 20 }}>
-                <h3>Lignes de la commande sélectionnée</h3>
+{/* TERMINÉES */}
+<div style={{ marginTop: 16 }}>
+  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div style={{ fontWeight: 700 }}>Terminées</div>
+    <button onClick={() => setShowDone(v => !v)} style={{ padding: "4px 8px" }}>
+      {showDone ? "Masquer" : "Afficher"}
+    </button>
+  </div>
 
-                {activeOrder?.status === "draft" ? (
-                  <form onSubmit={addOrderItem} style={{ display: "grid", gap: 8, gridTemplateColumns: "1.5fr 1fr 0.8fr 0.8fr auto", alignItems: "end" }}>
-                    <div><label>Pièce</label>
-                      <select value={oiPartId} onChange={(e) => { setOiPartId(e.target.value); }} style={{ width: "100%", padding: 8 }}>
-                        <option value="">— choisir —</option>
-                        {parts.map(p => <option key={p.id} value={p.id}>{p.sku} — {p.label}</option>)}
-                      </select>
-                    </div>
-                    <div><label>Réf fournisseur</label>
-                      <input value={oiSupplierRef} onChange={(e) => setOiSupplierRef(e.target.value)} placeholder="ex: X-789" style={{ width: "100%", padding: 8 }} />
-                    </div>
-                    <div><label>Qté</label>
-                      <input type="number" step={1} min={1} value={oiQty} onChange={(e) => setOiQty(e.target.value)} placeholder="ex: 10" style={{ width: "100%", padding: 8 }} />
-                    </div>
-                    <div><label>PU (EUR)</label>
-                      <input type="number" step="0.01" min={0} value={oiUnitPrice} onChange={(e) => setOiUnitPrice(e.target.value)} placeholder="ex: 12.50" style={{ width: "100%", padding: 8 }} />
-                    </div>
-                    <button disabled={addingItem} style={{ padding: "10px 16px" }}>{addingItem ? "Ajout..." : "Ajouter la ligne"}</button>
-                  </form>
-                ) : (
-                  <div style={{ marginTop: 12, opacity: 0.8 }}>Ajout de lignes désactivé (commande non “draft”).</div>
-                )}
+  {showDone && (
+    <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+      {ordersDone
+        .filter(/* le même filtre .includes(q) */)
+        .map((o) => (
+          <div key={o.id}
+            onClick={() => { setActiveOrderId(o.id); setReceiveSite(o.site || mySite || ""); }}
+            style={{ border: "1px solid #eee", borderRadius: 8, padding: 12, cursor: "pointer",
+                    background: activeOrderId === o.id ? "#f0f7ff" : "white", opacity: .85 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <div>
+                <b>{o.supplier_name || "—"}</b> · {o.site || "—"}
+                {o.external_ref ? <> · <span>#{o.external_ref}</span></> : null}
+                <div style={{ fontSize: 12, opacity: .8 }}>
+                  Reçu {o.qty_received} / {o.qty_ordered}
+                </div>
+              </div>
+              <div style={{ fontSize: 12, opacity: 0.8 }}>{o.status}</div>
+            </div>
+          </div>
+        ))}
+      {ordersDone.length === 0 && <div style={{ opacity:.7 }}>Aucune commande terminée.</div>}
+    </div>
+  )}
+</div>
 
                 {/* Tableau réception */}
                 <div style={{ marginTop: 12 }}>
