@@ -14,6 +14,7 @@ type Profile = {
   is_admin?: boolean;
   site?: string | null; // site assigné à l'utilisateur
 };
+type TabKey = "db" | "orders" | "transfer" | "inventory" | "admin";
 
 type Part = {
   id: string;
@@ -122,7 +123,7 @@ export default function App() {
   const [oiUnitPrice, setOiUnitPrice] = useState("");
 
   // UI
-  const [activeTab, setActiveTab] = useState<"db" | "orders" | "transfer" | "inventory" | "admin">("orders");
+  const [activeTab, setActiveTab] = useState<TabKey>("orders");
   const mySite = profile?.site || ""; // le site de l'utilisateur, si assigné
 
   // ---------- Utils ----------
@@ -479,16 +480,17 @@ export default function App() {
   }
 
   // ---------- UI: onglets ----------
-  const tabs: { key: typeof activeTab; label: string }[] = useMemo(() => {
-    const base = [
-      { key: "db" as const, label: "Base de données" },
-      { key: "orders" as const, label: "Commandes" },
-      { key: "transfer" as const, label: "Transferts" },
-      { key: "inventory" as const, label: "Inventaire" },
-    ];
-    if (profile?.is_admin) base.push({ key: "admin" as const, label: "Administration" });
-    return base;
-  }, [profile?.is_admin]);
+  const tabs: { key: TabKey; label: string }[] = useMemo(() => {
+  const base: { key: TabKey; label: string }[] = [
+    { key: "db",        label: "Base de données" },
+    { key: "orders",    label: "Commandes" },
+    { key: "transfer",  label: "Transferts" },
+    { key: "inventory", label: "Inventaire" },
+  ];
+  if (profile?.is_admin) base.push({ key: "admin", label: "Administration" });
+  return base;
+}, [profile?.is_admin]);
+
 
   // ---------- Auth UI minimal ----------
   if (!session) {
