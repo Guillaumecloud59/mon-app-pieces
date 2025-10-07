@@ -1124,86 +1124,148 @@ async function maybeMarkOrderReceived(orderId: string) {
           {activeOrderId ? (
             <div style={{ marginTop: 20 }}>
               <h3>Lignes de la commande sélectionnée</h3>
+{/* Tableau réception */}
+<div style={{ marginTop: 12 }}>
+  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+    <thead>
+      <tr>
+        <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>Pièce</th>
+        <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Qté cmd</th>
+        <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Déjà reçue</th>
+        <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Restant</th>
+        <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8 }}>État</th>
+        <th style={{ textAlign: "left", borderBottom: "1px solid #eee", padding: 8, minWidth: 160 }}>Emplacement</th>
+        <th style={{ textAlign: "right", borderBottom: "1px solid #eee", padding: 8 }}>Qté à réceptionner</th>
+      </tr>
+    </thead>
+    <tbody>
+      {orderItems.map((oi) => {
+        const rec = receivedByItem[oi.id] || 0;
+        const remaining = Math.max((oi.qty || 0) - rec, 0);
 
-              {activeOrder?.status === "draft" ? (
-                <form
-                  onSubmit={addOrderItem}
-                  style={{
-                    display: "grid",
-                    gap: 8,
-                    gridTemplateColumns: "1.5fr 1fr 0.8fr 0.8fr auto",
-                    alignItems: "end",
-                  }}
-                >
-                  <div>
-                    <label>Pièce</label>
-                    <select
-                      value={oiPartId}
-                      onChange={(e) => {
-                        setOiPartId(e.target.value);
-                      }}
-                      style={{ width: "100%", padding: 8 }}
-                    >
-                      <option value="">— choisir —</option>
-                      {parts.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.sku} — {p.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label>Réf fournisseur</label>
-                    <input
-                      value={oiSupplierRef}
-                      onChange={(e) => setOiSupplierRef(e.target.value)}
-                      placeholder="ex: X-789"
-                      style={{ width: "100%", padding: 8 }}
-                    />
-                  </div>
-                  <div>
-                    <label>Qté</label>
-                    <input
-                      type="number"
-                      step={1}
-                      min={1}
-                      value={oiQty}
-                      onChange={(e) => setOiQty(e.target.value)}
-                      placeholder="ex: 10"
-                      style={{ width: "100%", padding: 8 }}
-                    />
-                  </div>
-                  <div>
-                    <label>PU (EUR)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      value={oiUnitPrice}
-                      onChange={(e) => setOiUnitPrice(e.target.value)}
-                      placeholder="ex: 12.50"
-                      style={{ width: "100%", padding: 8 }}
-                    />
-                  </div>
-                  <button style={{ padding: "10px 16px" }}>Ajouter la ligne</button>
-                </form>
+        // site à utiliser pour l'emplacement
+        const siteUse = receiveSite || activeOrder?.site || mySite || "";
+        const locKey = `${siteUse}|${oi.part_id}`;
+        const existingLoc = knownLocationBySitePart[locKey];
+
+        return (
+          <tr key={oi.id}>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
+              {oi.part ? (
+                <>
+                  {oi.part.sku} — {oi.part.label}
+                </>
               ) : (
-                <div style={{ marginTop: 12, opacity: 0.8 }}>
-                  Ajout de lignes désactivé (commande non “draft”).
-                </div>
+                <span style={{ color: "#a00" }}>À référencer</span>
               )}
+              {oi.supplier_ref ? (
+                <div style={{ fontSize: 12, opacity: 0.75 }}>
+                  Réf fournisseur: <code>{oi.supplier_ref}</code>
+                </div>
+              ) : null}
+            </td>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>
+              {oi.qty}
+            </td>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>
+              {rec}
+            </td>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>
+              {remaining}
+            </td>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
+              <select
+                value={receiveCondByItem[oi.id] || "neuf"}
+                onChange={(e) =>
+                  setReceiveCondByItem({
+                    ...receiveCondByItem,
+                    [oi.id]: e.target.value as InventoryRow["condition"],
+                  })
+                }
+                style={{ padding: 6 }}
+              >
+                <option value="neuf">Neuf</option>
+                <option value="rec">Reconditionné</option>
+                <option value="occ">Occasion</option>
+              </select>
+            </td>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>
+              {existingLoc ? (
+                <input
+                  value={existingLoc}
+                  disabled
+                  style={{ width: "100%", padding: 6, background: "#f7f7f7" }}
+                />
+              ) : (
+                <input
+                  value={receiveLocByPart[locKey] || ""}
+                  onChange={(e) =>
+                    setReceiveLocByPart({ ...receiveLocByPart, [locKey]: e.target.value })
+                  }
+                  placeholder="ex: A-01-03"
+                  style={{ width: "100%", padding: 6 }}
+                />
+              )}
+            </td>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>
+              <input
+                type="number"
+                step={1}
+                min={0}
+                max={remaining}
+                value={toReceive[oi.id] || ""}
+                onChange={(e) => setToReceive({ ...toReceive, [oi.id]: e.target.value })}
+                placeholder="0"
+                style={{ width: 90, padding: 6, textAlign: "right" }}
+              />
+            </td>
+          </tr>
+        );
+      })}
+      {orderItems.length === 0 && (
+        <tr>
+          <td colSpan={7} style={{ padding: 12, textAlign: "center", opacity: 0.7 }}>
+            Aucune ligne pour cette commande.
+          </td>
+        </tr>
+      )}
+    </tbody>
+  </table>
+</div>
 
-              {/* Tableau réception */}
-              <div style={{ marginTop: 12 }}>
-                {/* ... garde ici TA TABLE existante de réception + le bouton "Enregistrer la réception" ... */}
-              </div>
-            </div>
-          ) : null}
-        </>
-      );
-    })()}
-  </section>
-)}
+<div style={{ marginTop: 16, display: "grid", gap: 8, gridTemplateColumns: "1fr auto" }}>
+  <div>
+    <label>Site de réception</label>
+    {mySite ? (
+      <input
+        value={mySite}
+        disabled
+        style={{ width: "100%", padding: 8, background: "#f7f7f7" }}
+      />
+    ) : (
+      <input
+        value={receiveSite}
+        onChange={(e) => setReceiveSite(e.target.value)}
+        placeholder="ex: Atelier A"
+        style={{ width: "100%", padding: 8 }}
+      />
+    )}
+    <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
+      (si un site t’est assigné, il est appliqué automatiquement)
+    </div>
+  </div>
+  <div style={{ alignSelf: "end" }}>
+    <button onClick={async () => {
+      await createReceiptWithItems();
+      // (optionnel) marquages auto si tu as ajouté ces fonctions plus tôt
+      await maybeMarkOrderPartial?.(activeOrderId);
+      await maybeMarkOrderReceived?.(activeOrderId);
+    }} style={{ padding: "10px 16px" }}>
+      Enregistrer la réception
+    </button>
+  </div>
+</div>
+
 
 
         {/* ================= Transfert ================= */}
