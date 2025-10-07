@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import React, { useEffect, useMemo, useState } from "react";
-import { createClient, Session } from "@supabase/supabase-js";
+import { createClient, type Session } from "@supabase/supabase-js";
 
 // ---------- Supabase client ----------
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
