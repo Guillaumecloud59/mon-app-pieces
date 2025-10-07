@@ -6,6 +6,19 @@ import { createClient, type Session } from "@supabase/supabase-js";
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 export const supabase = createClient(supabaseUrl, supabaseKey);
+// --- Base de données (Pièces / Fournisseurs / Sites) ---
+const [newPartSku, setNewPartSku] = useState("");
+const [newPartLabel, setNewPartLabel] = useState("");
+
+const [newSupplierName, setNewSupplierName] = useState("");
+const [newSupplierUrl, setNewSupplierUrl] = useState("");
+
+const [newSiteName, setNewSiteName] = useState("");
+
+// --- Administration ---
+type UserRow = { id: string; email: string | null; is_admin: boolean; site: string | null };
+const [users, setUsers] = useState<UserRow[]>([]);
+const [pendingRefs, setPendingRefs] = useState<any[]>([]);
 
 // ---------- Types (adaptés à l'app) ----------
 type Profile = {
@@ -122,6 +135,135 @@ export default function App() {
   const [oiQty, setOiQty] = useState("");
   const [oiUnitPrice, setOiUnitPrice] = useState("");
 
+// ------ CRUD Base de données ------
+async function addPart(e: React.FormEvent) {
+  e.preventDefault();
+  if (!newPartSku.trim() || !newPartLabel.trim()) return notify("SKU et libellé requis.", "error");
+  const { error } = await supabase.from("parts").insert({
+    sku: newPartSku.trim(),
+    label: newPartLabel.trim(),
+  });
+  if (error) return notify(error.message, "error");
+  setNewPartSku(""); setNewPartLabel("");
+  await loadParts();
+  notify("Pièce ajoutée.", "success");
+}
+
+async function deletePart(id: string) {
+  if (!confirm("Supprimer cette pièce ?")) return;
+  const { error } = await supabase.from("parts").delete().eq("id", id);
+  if (error) return notify(error.message, "error");
+  await loadParts();
+  notify("Pièce supprimée.", "success");
+}
+
+async function addSupplier(e: React.FormEvent) {
+  e.preventDefault();
+  if (!newSupplierName.trim()) return notify("Nom fournisseur requis.", "error");
+  const { error } = await supabase.from("suppliers").insert({
+    name: newSupplierName.trim(),
+    site_url: newSupplierUrl.trim() || null,
+  });
+  if (error) return notify(error.message, "error");
+  setNewSupplierName(""); setNewSupplierUrl("");
+  await loadSuppliers();
+  notify("Fournisseur ajouté.", "success");
+}
+
+async function deleteSupplier(id: string) {
+  if (!confirm("Supprimer ce fournisseur ?")) return;
+  const { error } = await supabase.from("suppliers").delete().eq("id", id);
+  if (error) return notify(error.message, "error");
+  await loadSuppliers();
+  notify("Fournisseur supprimé.", "success");
+}
+
+async function addSite(e: React.FormEvent) {
+  e.preventDefault();
+  if (!newSiteName.trim()) return notify("Nom de site requis.", "error");
+  const { error } = await supabase.from("sites").insert({ name: newSiteName.trim() });
+  if (error) return notify(error.message, "error");
+  setNewSiteName("");
+  await loadSites();
+  notify("Site ajouté.", "success");
+}
+
+async function deleteSite(id: string) {
+  if (!confirm("Supprimer ce site ?")) return;
+  const { error } = await supabase.from("sites").delete().eq("id", id);
+  if (error) return notify(error.message, "error");
+  await loadSites();
+  notify("Site supprimé.", "success");
+}
+
+// ------ Administration : utilisateurs & pending refs ------
+async function loadUsersIfAdmin() {
+  if (!profile?.is_admin) return;
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, email, is_admin, site")
+    .order("email");
+  if (error) return notify(error.message, "error");
+  setUsers((data || []) as UserRow[]);
+}
+
+async function setUserSite(userId: string, site: string | null) {
+  const { error } = await supabase.from("profiles").update({ site }).eq("id", userId);
+  if (error) return notify(error.message, "error");
+  setUsers(u => u.map(x => x.id === userId ? { ...x, site } : x));
+  notify("Affectation mise à jour.", "success");
+}
+
+async function toggleUserAdmin(userId: string, value: boolean) {
+  const { error } = await supabase.from("profiles").update({ is_admin: value }).eq("id", userId);
+  if (error) return notify(error.message, "error");
+  setUsers(u => u.map(x => x.id === userId ? { ...x, is_admin: value } : x));
+  notify("Rôle admin mis à jour.", "success");
+}
+
+async function loadPendingRefs() {
+  if (!profile?.is_admin) return;
+  const { data, error } = await supabase
+    .from("pending_refs")
+    .select(`
+      id, created_at, supplier_id, supplier_ref, part_id, product_url,
+      part:parts(id, sku, label),
+      supplier:suppliers(id, name)
+    `)
+    .order("created_at", { ascending: false });
+  if (error) return notify(error.message, "error");
+
+  const normalized = (data || []).map((r: any) => ({
+    ...r,
+    part: Array.isArray(r.part) ? r.part[0] : r.part,
+    supplier: Array.isArray(r.supplier) ? r.supplier[0] : r.supplier,
+  }));
+  setPendingRefs(normalized);
+}
+
+async function approvePendingRef(p: any) {
+  // crée la référence fournisseur et supprime la pending
+  const { error: insErr } = await supabase.from("supplier_part_refs").insert({
+    part_id: p.part_id,
+    supplier_id: p.supplier_id,
+    supplier_ref: p.supplier_ref,
+    product_url: p.product_url || null,
+  });
+  if (insErr) return notify(insErr.message, "error");
+  const { error: delErr } = await supabase.from("pending_refs").delete().eq("id", p.id);
+  if (delErr) return notify(delErr.message, "error");
+  setPendingRefs(prev => prev.filter(x => x.id !== p.id));
+  notify("Référence approuvée.", "success");
+}
+
+async function rejectPendingRef(id: string) {
+  const { error } = await supabase.from("pending_refs").delete().eq("id", id);
+  if (error) return notify(error.message, "error");
+  setPendingRefs(prev => prev.filter(x => x.id !== id));
+  notify("Référence rejetée.", "success");
+}
+
+  
   // UI
   const [activeTab, setActiveTab] = useState<TabKey>("orders");
   const mySite = profile?.site || ""; // le site de l'utilisateur, si assigné
@@ -147,6 +289,12 @@ export default function App() {
       sub.subscription.unsubscribe();
     };
   }, []);
+useEffect(() => {
+  if (profile?.is_admin && activeTab === "admin") {
+    loadUsersIfAdmin();
+    loadPendingRefs();
+  }
+}, [profile?.is_admin, activeTab]);
 
   useEffect(() => {
     if (!session) return;
@@ -914,16 +1062,127 @@ export default function App() {
 
       {/* Onglet: Base de données (squelette non bloquant) */}
       {activeTab === "db" && (
-        <section>
-          <h2>Base de données</h2>
-          <p style={{ opacity: 0.8 }}>Référentiel pièces / fournisseurs — (à compléter plus tard).</p>
-          <ul>
-            <li>Pièces: {parts.length}</li>
-            <li>Fournisseurs: {suppliers.length}</li>
-            <li>Sites: {sites.length}</li>
-          </ul>
-        </section>
-      )}
+  <section>
+    <h2>Base de données</h2>
+
+    {/* Pièces */}
+    <div style={{ marginTop: 12 }}>
+      <h3>Pièces</h3>
+      <form onSubmit={addPart} style={{ display: "grid", gridTemplateColumns: "1fr 2fr auto", gap: 8, alignItems: "end" }}>
+        <div>
+          <label>SKU</label>
+          <input value={newPartSku} onChange={(e) => setNewPartSku(e.target.value)} placeholder="ex: ABC-123" style={{ width: "100%", padding: 8 }} />
+        </div>
+        <div>
+          <label>Libellé</label>
+          <input value={newPartLabel} onChange={(e) => setNewPartLabel(e.target.value)} placeholder="ex: Filtre à huile" style={{ width: "100%", padding: 8 }} />
+        </div>
+        <button>Ajouter</button>
+      </form>
+
+      <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 10 }}>
+        <thead>
+          <tr>
+            <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>SKU</th>
+            <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Libellé</th>
+            <th style={{ textAlign: "right", padding: 8, borderBottom: "1px solid #eee" }}>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {parts.map(p => (
+            <tr key={p.id}>
+              <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{p.sku}</td>
+              <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{p.label}</td>
+              <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>
+                <button onClick={() => deletePart(p.id)} style={{ color: "#a00" }}>Supprimer</button>
+              </td>
+            </tr>
+          ))}
+          {parts.length === 0 && (
+            <tr><td colSpan={3} style={{ padding: 12, opacity: .7, textAlign: "center" }}>Aucune pièce.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+
+    {/* Fournisseurs */}
+    <div style={{ marginTop: 24 }}>
+      <h3>Fournisseurs</h3>
+      <form onSubmit={addSupplier} style={{ display: "grid", gridTemplateColumns: "2fr 2fr auto", gap: 8, alignItems: "end" }}>
+        <div>
+          <label>Nom</label>
+          <input value={newSupplierName} onChange={(e) => setNewSupplierName(e.target.value)} placeholder="ex: PiècesPro" style={{ width: "100%", padding: 8 }} />
+        </div>
+        <div>
+          <label>URL (optionnel)</label>
+          <input value={newSupplierUrl} onChange={(e) => setNewSupplierUrl(e.target.value)} placeholder="https://..." style={{ width: "100%", padding: 8 }} />
+        </div>
+        <button>Ajouter</button>
+      </form>
+
+      <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 10 }}>
+        <thead>
+          <tr>
+            <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Nom</th>
+            <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Site</th>
+            <th style={{ textAlign: "right", padding: 8, borderBottom: "1px solid #eee" }}>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {suppliers.map(s => (
+            <tr key={s.id}>
+              <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{s.name}</td>
+              <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>
+                {s.site_url ? <a href={s.site_url} target="_blank" rel="noreferrer">{s.site_url}</a> : "—"}
+              </td>
+              <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>
+                <button onClick={() => deleteSupplier(s.id)} style={{ color: "#a00" }}>Supprimer</button>
+              </td>
+            </tr>
+          ))}
+          {suppliers.length === 0 && (
+            <tr><td colSpan={3} style={{ padding: 12, opacity: .7, textAlign: "center" }}>Aucun fournisseur.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+
+    {/* Sites */}
+    <div style={{ marginTop: 24 }}>
+      <h3>Sites</h3>
+      <form onSubmit={addSite} style={{ display: "grid", gridTemplateColumns: "2fr auto", gap: 8, alignItems: "end" }}>
+        <div>
+          <label>Nom du site</label>
+          <input value={newSiteName} onChange={(e) => setNewSiteName(e.target.value)} placeholder="ex: Atelier A" style={{ width: "100%", padding: 8 }} />
+        </div>
+        <button>Ajouter</button>
+      </form>
+
+      <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 10 }}>
+        <thead>
+          <tr>
+            <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Nom</th>
+            <th style={{ textAlign: "right", padding: 8, borderBottom: "1px solid #eee" }}>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sites.map(s => (
+            <tr key={s.id}>
+              <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{s.name}</td>
+              <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>
+                <button onClick={() => deleteSite(s.id)} style={{ color: "#a00" }}>Supprimer</button>
+              </td>
+            </tr>
+          ))}
+          {sites.length === 0 && (
+            <tr><td colSpan={2} style={{ padding: 12, opacity: .7, textAlign: "center" }}>Aucun site.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  </section>
+)}
+
 
       {/* Onglet: Inventaire (squelette non bloquant) */}
       {activeTab === "inventory" && (
@@ -976,15 +1235,107 @@ export default function App() {
       )}
 
       {/* Onglet: Administration (visible si admin) */}
-      {activeTab === "admin" && profile?.is_admin && (
-        <section>
-          <h2>Administration</h2>
-          <p style={{ opacity: 0.8 }}>Affectations des sites, validations, etc. (à compléter).</p>
-        </section>
-      )}
+     {activeTab === "admin" && profile?.is_admin && (
+  <section>
+    <h2>Administration</h2>
+
+    {/* Affectations utilisateurs */}
+    <div style={{ marginTop: 12 }}>
+      <h3>Utilisateurs</h3>
+      <p style={{ opacity: .8, marginTop: 0 }}>Assigner un site et/ou basculer un compte en admin.</p>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Email</th>
+            <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Site</th>
+            <th style={{ textAlign: "center", padding: 8, borderBottom: "1px solid #eee" }}>Admin</th>
+            <th style={{ textAlign: "right", padding: 8, borderBottom: "1px solid #eee" }}>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {users.map(u => (
+            <tr key={u.id}>
+              <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{u.email || u.id}</td>
+              <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>
+                <select
+                  value={u.site || ""}
+                  onChange={(e) => setUsers(prev => prev.map(x => x.id === u.id ? { ...x, site: e.target.value || null } : x))}
+                  style={{ padding: 6, minWidth: 160 }}
+                >
+                  <option value="">— aucun —</option>
+                  {sites.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                </select>
+              </td>
+              <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={u.is_admin}
+                  onChange={(e) => setUsers(prev => prev.map(x => x.id === u.id ? { ...x, is_admin: e.target.checked } : x))}
+                />
+              </td>
+              <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>
+                <button
+                  onClick={async () => {
+                    await setUserSite(u.id, u.site || null);
+                    await toggleUserAdmin(u.id, u.is_admin);
+                  }}
+                >
+                  Enregistrer
+                </button>
+              </td>
+            </tr>
+          ))}
+          {users.length === 0 && (
+            <tr><td colSpan={4} style={{ padding: 12, textAlign: "center", opacity: .7 }}>Aucun utilisateur.</td></tr>
+          )}
+        </tbody>
+      </table>
     </div>
-  );
-}
+
+    {/* Références en attente (à référencer) */}
+    <div style={{ marginTop: 24 }}>
+      <h3>Références en attente</h3>
+      <p style={{ opacity: .8, marginTop: 0 }}>Issues des commandes lorsqu'une réf fournisseur n'était pas liée à une pièce.</p>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Créée</th>
+            <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Fournisseur</th>
+            <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Réf fournisseur</th>
+            <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Pièce</th>
+            <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>URL</th>
+            <th style={{ textAlign: "right", padding: 8, borderBottom: "1px solid #eee" }}>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pendingRefs.map(p => (
+            <tr key={p.id}>
+              <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{new Date(p.created_at).toLocaleString()}</td>
+              <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{p.supplier?.name || p.supplier_id}</td>
+              <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>
+                <code>{p.supplier_ref}</code>
+              </td>
+              <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>
+                {p.part ? `${p.part.sku} — ${p.part.label}` : p.part_id}
+              </td>
+              <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>
+                {p.product_url ? <a href={p.product_url} target="_blank" rel="noreferrer">{p.product_url}</a> : "—"}
+              </td>
+              <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>
+                <button onClick={() => approvePendingRef(p)} style={{ marginRight: 8 }}>Approuver</button>
+                <button onClick={() => rejectPendingRef(p.id)} style={{ color: "#a00" }}>Rejeter</button>
+              </td>
+            </tr>
+          ))}
+          {pendingRefs.length === 0 && (
+            <tr><td colSpan={6} style={{ padding: 12, textAlign: "center", opacity: .7 }}>Aucune référence en attente.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  </section>
+)}
+
 
 // ---------- Sous-composant: bloc repliable des commandes terminées ----------
 function DoneOrdersBlock({
