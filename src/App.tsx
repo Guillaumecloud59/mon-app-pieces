@@ -1602,6 +1602,281 @@ function AdminTab(props: {
     </section>
   );
 }
+function DbTab(props: {
+  parts: { id: string; sku: string; label: string }[];
+  suppliers: { id: string; name: string; site_url?: string | null }[];
+  sites: { id: string; name: string }[];
+
+  newPartSku: string;
+  setNewPartSku: (v: string) => void;
+  newPartLabel: string;
+  setNewPartLabel: (v: string) => void;
+  addPart: (e: React.FormEvent) => Promise<void>;
+  deletePart: (id: string) => Promise<void>;
+
+  newSupplierName: string;
+  setNewSupplierName: (v: string) => void;
+  newSupplierUrl: string;
+  setNewSupplierUrl: (v: string) => void;
+  addSupplier: (e: React.FormEvent) => Promise<void>;
+  deleteSupplier: (id: string) => Promise<void>;
+
+  newSiteName: string;
+  setNewSiteName: (v: string) => void;
+  addSite: (e: React.FormEvent) => Promise<void>;
+  deleteSite: (id: string) => Promise<void>;
+}) {
+  const {
+    parts, suppliers, sites,
+    newPartSku, setNewPartSku, newPartLabel, setNewPartLabel, addPart, deletePart,
+    newSupplierName, setNewSupplierName, newSupplierUrl, setNewSupplierUrl, addSupplier, deleteSupplier,
+    newSiteName, setNewSiteName, addSite, deleteSite,
+  } = props;
+
+  return (
+    <section>
+      <h2>Base de données</h2>
+
+      {/* Pièces */}
+      <div style={{ marginTop: 12 }}>
+        <h3>Pièces</h3>
+        <form onSubmit={addPart} style={{ display: "grid", gridTemplateColumns: "1fr 2fr auto", gap: 8, alignItems: "end" }}>
+          <div>
+            <label>SKU</label>
+            <input value={newPartSku} onChange={(e) => setNewPartSku(e.target.value)} placeholder="ex: ABC-123" style={{ width: "100%", padding: 8 }} />
+          </div>
+          <div>
+            <label>Libellé</label>
+            <input value={newPartLabel} onChange={(e) => setNewPartLabel(e.target.value)} placeholder="ex: Filtre à huile" style={{ width: "100%", padding: 8 }} />
+          </div>
+          <button>Ajouter</button>
+        </form>
+
+        <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 10 }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>SKU</th>
+              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Libellé</th>
+              <th style={{ textAlign: "right", padding: 8, borderBottom: "1px solid #eee" }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {parts.map(p => (
+              <tr key={p.id}>
+                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{p.sku}</td>
+                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{p.label}</td>
+                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>
+                  <button type="button" onClick={() => void deletePart(p.id)} style={{ color: "#a00" }}>Supprimer</button>
+                </td>
+              </tr>
+            ))}
+            {parts.length === 0 && (
+              <tr><td colSpan={3} style={{ padding: 12, opacity: .7, textAlign: "center" }}>Aucune pièce.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Fournisseurs */}
+      <div style={{ marginTop: 24 }}>
+        <h3>Fournisseurs</h3>
+        <form onSubmit={addSupplier} style={{ display: "grid", gridTemplateColumns: "2fr 2fr auto", gap: 8, alignItems: "end" }}>
+          <div>
+            <label>Nom</label>
+            <input value={newSupplierName} onChange={(e) => setNewSupplierName(e.target.value)} placeholder="ex: PiècesPro" style={{ width: "100%", padding: 8 }} />
+          </div>
+          <div>
+            <label>URL (optionnel)</label>
+            <input value={newSupplierUrl} onChange={(e) => setNewSupplierUrl(e.target.value)} placeholder="https://..." style={{ width: "100%", padding: 8 }} />
+          </div>
+          <button>Ajouter</button>
+        </form>
+
+        <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 10 }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Nom</th>
+              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Site</th>
+              <th style={{ textAlign: "right", padding: 8, borderBottom: "1px solid #eee" }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {suppliers.map(s => (
+              <tr key={s.id}>
+                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{s.name}</td>
+                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>
+                  {s.site_url ? <a href={s.site_url} target="_blank" rel="noreferrer">{s.site_url}</a> : "—"}
+                </td>
+                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>
+                  <button type="button" onClick={() => void deleteSupplier(s.id)} style={{ color: "#a00" }}>Supprimer</button>
+                </td>
+              </tr>
+            ))}
+            {suppliers.length === 0 && (
+              <tr><td colSpan={3} style={{ padding: 12, opacity: .7, textAlign: "center" }}>Aucun fournisseur.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Sites */}
+      <div style={{ marginTop: 24 }}>
+        <h3>Sites</h3>
+        <form onSubmit={addSite} style={{ display: "grid", gridTemplateColumns: "2fr auto", gap: 8, alignItems: "end" }}>
+          <div>
+            <label>Nom du site</label>
+            <input value={newSiteName} onChange={(e) => setNewSiteName(e.target.value)} placeholder="ex: Atelier A" style={{ width: "100%", padding: 8 }} />
+          </div>
+          <button>Ajouter</button>
+        </form>
+
+        <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 10 }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Nom</th>
+              <th style={{ textAlign: "right", padding: 8, borderBottom: "1px solid #eee" }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sites.map(s => (
+              <tr key={s.id}>
+                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{s.name}</td>
+                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>
+                  <button type="button" onClick={() => void deleteSite(s.id)} style={{ color: "#a00" }}>Supprimer</button>
+                </td>
+              </tr>
+            ))}
+            {sites.length === 0 && (
+              <tr><td colSpan={2} style={{ padding: 12, opacity: .7, textAlign: "center" }}>Aucun site.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+function AdminTab(props: {
+  users: { id: string; email: string | null; is_admin: boolean; site: string | null }[];
+  sites: { id: string; name: string }[];
+  pendingRefs: any[];
+  setUsers: React.Dispatch<React.SetStateAction<{ id: string; email: string | null; is_admin: boolean; site: string | null }[]>>;
+  setUserSite: (userId: string, site: string | null) => Promise<void>;
+  toggleUserAdmin: (userId: string, value: boolean) => Promise<void>;
+  approvePendingRef: (p: any) => Promise<void>;
+  rejectPendingRef: (id: string) => Promise<void>;
+}) {
+  const {
+    users, sites, pendingRefs,
+    setUsers, setUserSite, toggleUserAdmin,
+    approvePendingRef, rejectPendingRef,
+  } = props;
+
+  return (
+    <section>
+      <h2>Administration</h2>
+
+      {/* Utilisateurs */}
+      <div style={{ marginTop: 12 }}>
+        <h3>Utilisateurs</h3>
+        <p style={{ opacity: .8, marginTop: 0 }}>Assigner un site et/ou basculer un compte en admin.</p>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Email</th>
+              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Site</th>
+              <th style={{ textAlign: "center", padding: 8, borderBottom: "1px solid #eee" }}>Admin</th>
+              <th style={{ textAlign: "right", padding: 8, borderBottom: "1px solid #eee" }}>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map(u => (
+              <tr key={u.id}>
+                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{u.email || u.id}</td>
+                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>
+                  <select
+                    value={u.site || ""}
+                    onChange={(e) => setUsers(prev => prev.map(x => x.id === u.id ? { ...x, site: e.target.value || null } : x))}
+                    style={{ padding: 6, minWidth: 160 }}
+                  >
+                    <option value="">— aucun —</option>
+                    {sites.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                  </select>
+                </td>
+                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={u.is_admin}
+                    onChange={(e) => setUsers(prev => prev.map(x => x.id === u.id ? { ...x, is_admin: e.target.checked } : x))}
+                  />
+                </td>
+                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>
+                  <button
+                    type="button"
+                    onClick={() => Promise.all([
+                      setUserSite(u.id, u.site || null),
+                      toggleUserAdmin(u.id, u.is_admin),
+                    ]).then(() => void 0)}
+                  >
+                    Enregistrer
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {users.length === 0 && (
+              <tr><td colSpan={4} style={{ padding: 12, textAlign: "center", opacity: .7 }}>Aucun utilisateur.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Références en attente */}
+      <div style={{ marginTop: 24 }}>
+        <h3>Références en attente</h3>
+        <p style={{ opacity: .8, marginTop: 0 }}>Issues des commandes lorsqu'une réf fournisseur n'était pas liée à une pièce.</p>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Créée</th>
+              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Fournisseur</th>
+              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Réf fournisseur</th>
+              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Pièce</th>
+              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>URL</th>
+              <th style={{ textAlign: "right", padding: 8, borderBottom: "1px solid #eee" }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pendingRefs.map(p => (
+              <tr key={p.id}>
+                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>
+                  {p.created_at ? new Date(p.created_at).toLocaleString() : "—"}
+                </td>
+                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>
+                  {p.supplier?.name || p.supplier_id}
+                </td>
+                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>
+                  <code>{p.supplier_ref}</code>
+                </td>
+                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>
+                  {p.part ? `${p.part.sku} — ${p.part.label}` : p.part_id}
+                </td>
+                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>
+                  {p.product_url ? <a href={p.product_url} target="_blank" rel="noreferrer">{p.product_url}</a> : "—"}
+                </td>
+                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "right" }}>
+                  <button type="button" onClick={() => void approvePendingRef(p)} style={{ marginRight: 8 }}>Approuver</button>
+                  <button type="button" onClick={() => void rejectPendingRef(p.id)} style={{ color: "#a00" }}>Rejeter</button>
+                </td>
+              </tr>
+            ))}
+            {pendingRefs.length === 0 && (
+              <tr><td colSpan={6} style={{ padding: 12, textAlign: "center", opacity: .7 }}>Aucune référence en attente.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
 
 // ---------- Pont simple pour “ouvrir” une commande terminée depuis DoneOrdersBlock ----------
 declare global {
