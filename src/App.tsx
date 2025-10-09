@@ -426,6 +426,33 @@ async function updateInventoryLocation(row: InventoryRow, newLoc: string): Promi
     await maybeMarkOrderPartial(activeOrderId);
     await maybeMarkOrderReceived(activeOrderId);
   }
+async function markOrderAsOrdered(): Promise<void> {
+  if (!activeOrderId) return notify("Aucune commande sélectionnée.", "error");
+
+  // Sécurité: il faut au moins 1 ligne
+  const { data: items, error: itemsErr } = await supabase
+    .from("order_items")
+    .select("id")
+    .eq("order_id", activeOrderId)
+    .limit(1);
+  if (itemsErr) return notify(itemsErr.message, "error");
+  if (!items || items.length === 0) {
+    return notify("Ajoute au moins une ligne avant de commander.", "error");
+  }
+
+  // Passage au statut 'ordered' + date
+  const { error } = await supabase
+    .from("orders")
+    .update({ status: "ordered", ordered_at: new Date().toISOString() })
+    .eq("id", activeOrderId);
+
+  if (error) return notify(error.message, "error");
+
+  notify("Commande passée au statut 'ordered'.", "success");
+  await loadOrders();
+  // Recharge les items pour verrouiller l’UI d’ajout (déjà conditionnée sur status === 'draft')
+  await loadOrderItems(activeOrderId);
+}
 
   async function maybeMarkOrderPartial(orderId: string): Promise<void> {
     const { data, error } = await supabase
@@ -743,6 +770,25 @@ async function updateInventoryLocation(row: InventoryRow, newLoc: string): Promi
           {/* Lignes + Réception */}
           {activeOrderId ? (
             <div style={{ marginTop: 20 }}>
+             {activeOrder && (
+  <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 12 }}>
+    <span style={{ fontSize: 13, opacity: .85 }}>
+      Statut : <b>{activeOrder.status}</b>
+      {activeOrder.ordered_at ? ` · commandée le ${new Date(activeOrder.ordered_at).toLocaleString()}` : ""}
+    </span>
+
+    {activeOrder.status === "draft" && (
+      <button
+        onClick={() => void markOrderAsOrdered()}
+        style={{ marginLeft: "auto", padding: "8px 12px" }}
+        title="Bloque l’ajout de lignes et enregistre la date de commande."
+      >
+        Passer en “commandé”
+      </button>
+    )}
+  </div>
+)}
+
               <h3>Lignes de la commande sélectionnée</h3>
 
               {activeOrder?.status === "draft" ? (
