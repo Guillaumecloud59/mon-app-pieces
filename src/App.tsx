@@ -87,6 +87,7 @@ export default function App() {
     () => orders.find((o) => o.id === activeOrderId),
     [orders, activeOrderId]
   );
+const [receiving, setReceiving] = useState(false);
 
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [receivedByItem, setReceivedByItem] = useState<Record<string, number>>({});
@@ -327,9 +328,132 @@ async function updateInventoryLocation(row: InventoryRow, newLoc: string): Promi
   }
 
   async function createReceiptWithItems(): Promise<void> {
-    if (!activeOrderId) return notify("Aucune commande active.", "error");
-    const siteUse = mySite || receiveSite || activeOrder?.site || "";
-    if (!siteUse) return notify("Le site de réception est requis.", "error");
+  if (!activeOrderId) return notify("Aucune commande active.", "error");
+  const siteUse = mySite || receiveSite || activeOrder?.site || "";
+  if (!siteUse) return notify("Le site de réception est requis.", "error");
+
+  // Construire la liste à recevoir + validations
+  const entries = orderItems
+    .map((oi) => {
+      const qty = parseInt(toReceive[oi.id] || "0", 10);
+      if (!qty || qty <= 0) return null;
+      const rest = remainingFor(oi);
+      if (qty > rest) {
+        notify(
+          `La quantité saisie (${qty}) dépasse le restant (${rest}) pour ${oi.part?.sku || oi.part_id || "ligne"}.`,
+          "error"
+        );
+        return null;
+      }
+      const cond = receiveCondByItem[oi.id] || "neuf";
+      const locKey = `${siteUse}|${oi.part_id}`;
+      const location = knownLocationBySitePart[locKey] || receiveLocByPart[locKey] || null;
+      return { oi, qty, cond, location };
+    })
+    .filter(Boolean) as { oi: OrderItem; qty: number; cond: InventoryRow["condition"]; location: string | null }[];
+
+  if (!entries.length) return notify("Aucune quantité valide à réceptionner.", "error");
+
+  setReceiving(true);
+  try {
+    // 1) Créer le reçu
+    const { data: rec, error: rErr } = await supabase
+      .from("receipts")
+      .insert({ order_id: activeOrderId, site: siteUse, created_at: new Date().toISOString() })
+      .select("id")
+      .single();
+    if (rErr) throw rErr;
+    const receiptId = rec!.id as string;
+
+    // 2) Insérer les lignes + mouvements + inventaire (séquentiel, clair)
+    for (const ent of entries) {
+      const { oi, qty, cond, location } = ent;
+
+      // (a) receipt_items
+      const { error: riErr } = await supabase.from("receipt_items").insert({
+        receipt_id: receiptId,
+        order_item_id: oi.id,
+        qty_received: qty,
+        condition: cond,
+        location: location,
+      });
+      if (riErr) throw riErr;
+
+      // (b) stock_moves
+      const { error: smErr } = await supabase.from("stock_moves").insert({
+        part_id: oi.part_id,
+        site_from: null,
+        site_to: siteUse,
+        qty,
+        reason: "receipt",
+        related_order_id: activeOrderId,
+        condition: cond,
+      });
+      if (smErr) throw smErr;
+
+      // (c) inventaire (upsert additif sûr)
+      // On tente un upsert; si le moteur ne l’accepte pas, on bascule en update/insertion manuelle.
+      const { error: invUpErr } = await supabase
+        .from("inventory")
+        .upsert(
+          { site: siteUse, part_id: oi.part_id, condition: cond, location, qty },
+          { onConflict: "site,part_id,condition", ignoreDuplicates: false }
+        );
+      if (invUpErr) {
+        // Fallback additif
+        const { data: invRow, error: getErr } = await supabase
+          .from("inventory")
+          .select("qty, location")
+          .eq("site", siteUse)
+          .eq("part_id", oi.part_id)
+          .eq("condition", cond)
+          .maybeSingle();
+        if (getErr) throw getErr;
+
+        if (invRow) {
+          const { error: upErr } = await supabase
+            .from("inventory")
+            .update({
+              qty: (invRow.qty || 0) + qty,
+              // conserve l’emplacement existant si défini, sinon prend celui saisi
+              location: invRow.location || location || null,
+            })
+            .eq("site", siteUse)
+            .eq("part_id", oi.part_id)
+            .eq("condition", cond);
+          if (upErr) throw upErr;
+        } else {
+          const { error: insErr } = await supabase
+            .from("inventory")
+            .insert({ site: siteUse, part_id: oi.part_id, condition: cond, location, qty });
+          if (insErr) throw insErr;
+        }
+      }
+    }
+
+    // 3) Rafraîchir TOUT ce qui est à l’écran (pour éviter le F5)
+    await Promise.all([
+      loadOrderItems(activeOrderId),
+      loadOrders(),
+      loadInventory(),
+    ]);
+
+    // 4) Mettre à jour le statut intelligemment
+    await maybeMarkOrderPartial(activeOrderId);
+    await maybeMarkOrderReceived(activeOrderId);
+
+    // 5) Reset des champs de réception
+    setToReceive({});
+    setReceiveLocByPart({});
+    setReceiveCondByItem({});
+
+    notify("Réception enregistrée.", "success");
+  } catch (e: any) {
+    notify(e?.message || "Erreur de réception", "error");
+  } finally {
+    setReceiving(false);
+  }
+}
 
     const entries = orderItems
       .map((oi) => {
@@ -969,9 +1093,10 @@ async function markOrderAsOrdered(): Promise<void> {
                   <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>(si un site t’est assigné, il est appliqué automatiquement)</div>
                 </div>
                 <div style={{ alignSelf: "end" }}>
-                  <button onClick={() => void createReceiptWithItems()} style={{ padding: "10px 16px" }}>
-                    Enregistrer la réception
-                  </button>
+                  <button onClick={() => void createReceiptWithItems()} disabled={receiving} style={{ padding: "10px 16px" }}>
+  {receiving ? "Enregistrement..." : "Enregistrer la réception"}
+</button>
+
                 </div>
               </div>
             </div>
