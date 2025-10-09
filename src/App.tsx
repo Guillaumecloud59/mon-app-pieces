@@ -321,154 +321,173 @@ async function updateInventoryLocation(row: InventoryRow, newLoc: string): Promi
     await loadOrders();
   }
 
-  // --- Réception ---
+    // --- Réception ---
   function remainingFor(item: OrderItem): number {
     const rec = receivedByItem[item.id] || 0;
     return Math.max((item.qty || 0) - rec, 0);
   }
 
   async function createReceiptWithItems(): Promise<void> {
-  if (!activeOrderId) return notify("Aucune commande active.", "error");
-  const siteUse = mySite || receiveSite || activeOrder?.site || "";
-  if (!siteUse) return notify("Le site de réception est requis.", "error");
+    if (!activeOrderId) return notify("Aucune commande active.", "error");
 
-  // Construire la liste à recevoir + validations
-  
-    // 5) Reset des champs de réception
-    setToReceive({});
-    setReceiveLocByPart({});
-    setReceiveCondByItem({});
+    const siteUse = mySite || receiveSite || activeOrder?.site || "";
+    if (!siteUse) return notify("Le site de réception est requis.", "error");
 
-    notify("Réception enregistrée.", "success");
-  } catch (e: any) {
-    notify(e?.message || "Erreur de réception", "error");
-  } finally {
-    setReceiving(false);
-  }
-}
-
+    // Construire la liste à recevoir + validations
     const entries = orderItems
       .map((oi) => {
         const qty = parseInt(toReceive[oi.id] || "0", 10);
         if (!qty || qty <= 0) return null;
+
         const rest = remainingFor(oi);
-        if (qty > rest) return null;
+        if (qty > rest) {
+          notify(
+            `La quantité saisie (${qty}) dépasse le restant (${rest}) pour ${
+              oi.part?.sku || oi.part_id || "ligne"
+            }.`,
+            "error"
+          );
+          return null;
+        }
+
         const cond = receiveCondByItem[oi.id] || "neuf";
         const locKey = `${siteUse}|${oi.part_id}`;
         const location = knownLocationBySitePart[locKey] || receiveLocByPart[locKey] || null;
+
         return { oi, qty, cond, location };
       })
-      .filter(Boolean) as { oi: OrderItem; qty: number; cond: InventoryRow["condition"]; location: string | null }[];
-    if (!entries.length) return notify("Aucune quantité à réceptionner.", "error");
+      .filter(Boolean) as {
+        oi: OrderItem;
+        qty: number;
+        cond: InventoryRow["condition"];
+        location: string | null;
+      }[];
 
-    // 1) reçu
-    const { data: rec, error: rErr } = await supabase
-      .from("receipts")
-      .insert({ order_id: activeOrderId, site: siteUse, created_at: new Date().toISOString() })
-      .select("id")
-      .single();
-    if (rErr) return notify(rErr.message, "error");
-    const receiptId = rec!.id as string;
+    if (!entries.length) return notify("Aucune quantité valide à réceptionner.", "error");
 
-    // 2) lignes + mouvements + inventaire
-    for (const ent of entries) {
-      const { oi, qty, cond, location } = ent;
+    setReceiving(true);
+    try {
+      // 1) Créer le reçu
+      const { data: rec, error: rErr } = await supabase
+        .from("receipts")
+        .insert({
+          order_id: activeOrderId,
+          site: siteUse,
+          created_at: new Date().toISOString(),
+        })
+        .select("id")
+        .single();
+      if (rErr) throw rErr;
+      const receiptId = rec!.id as string;
 
-      const { error: riErr } = await supabase.from("receipt_items").insert({
-        receipt_id: receiptId,
-        order_item_id: oi.id,
-        qty_received: qty,
-        condition: cond,
-        location: location,
-      });
-      if (riErr) return notify(riErr.message, "error");
+      // 2) Insérer les lignes + mouvements + inventaire
+      for (const { oi, qty, cond, location } of entries) {
+        // (a) receipt_items
+        const { error: riErr } = await supabase.from("receipt_items").insert({
+          receipt_id: receiptId,
+          order_item_id: oi.id,
+          qty_received: qty,
+          condition: cond,
+          location,
+        });
+        if (riErr) throw riErr;
 
-      const { error: smErr } = await supabase.from("stock_moves").insert({
-        part_id: oi.part_id,
-        site_from: null,
-        site_to: siteUse,
-        qty,
-        reason: "receipt",
-        related_order_id: activeOrderId,
-        condition: cond,
-      });
-      if (smErr) return notify(smErr.message, "error");
+        // (b) stock_moves
+        const { error: smErr } = await supabase.from("stock_moves").insert({
+          part_id: oi.part_id,
+          site_from: null,
+          site_to: siteUse,
+          qty,
+          reason: "receipt",
+          related_order_id: activeOrderId,
+          condition: cond,
+        });
+        if (smErr) throw smErr;
 
-      // upsert inventaire (site, part_id, condition)
-      const { error: invErr } = await supabase
-        .from("inventory")
-        .upsert(
-          { site: siteUse, part_id: oi.part_id, condition: cond, location, qty },
-          { onConflict: "site,part_id,condition", ignoreDuplicates: false }
-        );
-      if (invErr) {
-        // fallback additif
-        const { data: invRow } = await supabase
+        // (c) inventaire : upsert additif avec fallback
+        const { error: upErrDirect } = await supabase
           .from("inventory")
-          .select("qty, location")
-          .eq("site", siteUse)
-          .eq("part_id", oi.part_id)
-          .eq("condition", cond)
-          .maybeSingle();
-        if (invRow) {
-          const { error: upErr } = await supabase
+          .upsert(
+            { site: siteUse, part_id: oi.part_id, condition: cond, location, qty },
+            { onConflict: "site,part_id,condition", ignoreDuplicates: false }
+          );
+        if (upErrDirect) {
+          // Fallback additif
+          const { data: invRow, error: getErr } = await supabase
             .from("inventory")
-            .update({
-              qty: (invRow.qty || 0) + qty,
-              location: invRow.location || location || null,
-            })
+            .select("qty, location")
             .eq("site", siteUse)
             .eq("part_id", oi.part_id)
-            .eq("condition", cond);
-          if (upErr) return notify(upErr.message, "error");
-        } else {
-          const { error: insErr } = await supabase
-            .from("inventory")
-            .insert({ site: siteUse, part_id: oi.part_id, condition: cond, location, qty });
-          if (insErr) return notify(insErr.message, "error");
+            .eq("condition", cond)
+            .maybeSingle();
+          if (getErr) throw getErr;
+
+          if (invRow) {
+            const { error: upErr } = await supabase
+              .from("inventory")
+              .update({
+                qty: (invRow.qty || 0) + qty,
+                location: invRow.location || location || null,
+              })
+              .eq("site", siteUse)
+              .eq("part_id", oi.part_id)
+              .eq("condition", cond);
+            if (upErr) throw upErr;
+          } else {
+            const { error: insErr } = await supabase
+              .from("inventory")
+              .insert({ site: siteUse, part_id: oi.part_id, condition: cond, location, qty });
+            if (insErr) throw insErr;
+          }
         }
       }
+
+      // 3) Rafraîchir l’écran sans F5
+      await Promise.all([loadOrderItems(activeOrderId), loadOrders(), loadInventory()]);
+
+      // 4) Statut intelligent
+      await maybeMarkOrderPartial(activeOrderId);
+      await maybeMarkOrderReceived(activeOrderId);
+
+      // 5) Reset champs UI
+      setToReceive({});
+      setReceiveLocByPart({});
+      setReceiveCondByItem({});
+
+      notify("Réception enregistrée.", "success");
+    } catch (e: any) {
+      notify(e?.message || "Erreur de réception", "error");
+    } finally {
+      setReceiving(false);
+    }
+  }
+
+  async function markOrderAsOrdered(): Promise<void> {
+    if (!activeOrderId) return notify("Aucune commande sélectionnée.", "error");
+
+    // Sécurité: au moins 1 ligne
+    const { data: items, error: itemsErr } = await supabase
+      .from("order_items")
+      .select("id")
+      .eq("order_id", activeOrderId)
+      .limit(1);
+    if (itemsErr) return notify(itemsErr.message, "error");
+    if (!items || items.length === 0) {
+      return notify("Ajoute au moins une ligne avant de commander.", "error");
     }
 
-    notify("Réception enregistrée.", "success");
-    setToReceive({});
-    setReceiveLocByPart({});
-    setReceiveCondByItem({});
+    // Passage au statut 'ordered' + date
+    const { error } = await supabase
+      .from("orders")
+      .update({ status: "ordered", ordered_at: new Date().toISOString() })
+      .eq("id", activeOrderId);
 
-    await loadOrderItems(activeOrderId);
+    if (error) return notify(error.message, "error");
+
+    notify("Commande passée au statut 'ordered'.", "success");
     await loadOrders();
-    await loadInventory();
-
-    await maybeMarkOrderPartial(activeOrderId);
-    await maybeMarkOrderReceived(activeOrderId);
+    await loadOrderItems(activeOrderId);
   }
-async function markOrderAsOrdered(): Promise<void> {
-  if (!activeOrderId) return notify("Aucune commande sélectionnée.", "error");
-
-  // Sécurité: il faut au moins 1 ligne
-  const { data: items, error: itemsErr } = await supabase
-    .from("order_items")
-    .select("id")
-    .eq("order_id", activeOrderId)
-    .limit(1);
-  if (itemsErr) return notify(itemsErr.message, "error");
-  if (!items || items.length === 0) {
-    return notify("Ajoute au moins une ligne avant de commander.", "error");
-  }
-
-  // Passage au statut 'ordered' + date
-  const { error } = await supabase
-    .from("orders")
-    .update({ status: "ordered", ordered_at: new Date().toISOString() })
-    .eq("id", activeOrderId);
-
-  if (error) return notify(error.message, "error");
-
-  notify("Commande passée au statut 'ordered'.", "success");
-  await loadOrders();
-  // Recharge les items pour verrouiller l’UI d’ajout (déjà conditionnée sur status === 'draft')
-  await loadOrderItems(activeOrderId);
-}
 
   async function maybeMarkOrderPartial(orderId: string): Promise<void> {
     const { data, error } = await supabase
@@ -477,6 +496,7 @@ async function markOrderAsOrdered(): Promise<void> {
       .eq("id", orderId)
       .maybeSingle();
     if (error || !data) return;
+
     const qTot = data.qty_ordered || 0;
     const qRec = data.qty_received || 0;
     if (qTot > 0 && qRec > 0 && qRec < qTot && data.status !== "partially_received") {
@@ -492,12 +512,16 @@ async function markOrderAsOrdered(): Promise<void> {
       .eq("id", orderId)
       .maybeSingle();
     if (error || !data) return;
-    const allReceived = (data.qty_ordered || 0) > 0 && (data.qty_received || 0) >= (data.qty_ordered || 0);
+
+    const allReceived =
+      (data.qty_ordered || 0) > 0 && (data.qty_received || 0) >= (data.qty_ordered || 0);
     if (allReceived && data.status !== "received") {
       await supabase.from("orders").update({ status: "received" }).eq("id", orderId);
       await loadOrders();
     }
   }
+  // --- DB CRUD ---
+
 
   // --- DB CRUD ---
   async function addPart(e: React.FormEvent): Promise<void> {
