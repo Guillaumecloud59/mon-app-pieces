@@ -1251,10 +1251,14 @@ function OrdersLists({
     (o.part_skus || "").toLowerCase().includes(q) ||
     (o.supplier_refs || "").toLowerCase().includes(q);
 
-  const ordersActive = orders.filter((o) => ["draft", "ordered", "partially_received"].includes(o.status));
-  const ordersDone = orders.filter((o) => ["received", "cancelled"].includes(o.status));
+  const ordersActive = orders.filter((o) =>
+    ["draft", "ordered", "partially_received"].includes(o.status)
+  );
+  const ordersDone = orders.filter((o) =>
+    ["received", "cancelled"].includes(o.status)
+  );
 
-  const [openDone, setOpenDone] = useState(false);
+  const [openDone, setOpenDone] = React.useState(false);
 
   return (
     <div>
@@ -1293,7 +1297,9 @@ function OrdersLists({
               </div>
             </div>
           ))}
-          {ordersActive.filter(match).length === 0 && <div style={{ opacity: 0.7 }}>Aucune commande en cours.</div>}
+          {ordersActive.filter(match).length === 0 && (
+            <div style={{ opacity: 0.7 }}>Aucune commande en cours.</div>
+          )}
         </div>
       </div>
 
@@ -1337,7 +1343,9 @@ function OrdersLists({
                 </div>
               </div>
             ))}
-            {ordersDone.filter(match).length === 0 && <div style={{ opacity: 0.7 }}>Aucune commande terminée.</div>}
+            {ordersDone.filter(match).length === 0 && (
+              <div style={{ opacity: 0.7 }}>Aucune commande terminée.</div>
+            )}
           </div>
         )}
       </div>
@@ -1383,14 +1391,27 @@ function DbTab(props: {
       {/* Pièces */}
       <div style={{ marginTop: 12 }}>
         <h3>Pièces</h3>
-        <form onSubmit={addPart} style={{ display: "grid", gridTemplateColumns: "1fr 2fr auto", gap: 8, alignItems: "end" }}>
+        <form
+          onSubmit={addPart}
+          style={{ display: "grid", gridTemplateColumns: "1fr 2fr auto", gap: 8, alignItems: "end" }}
+        >
           <div>
             <label>SKU</label>
-            <input value={newPartSku} onChange={(e) => setNewPartSku(e.target.value)} placeholder="ex: ABC-123" style={{ width: "100%", padding: 8 }} />
+            <input
+              value={newPartSku}
+              onChange={(e) => setNewPartSku(e.target.value)}
+              placeholder="ex: ABC-123"
+              style={{ width: "100%", padding: 8 }}
+            />
           </div>
           <div>
             <label>Libellé</label>
-            <input value={newPartLabel} onChange={(e) => setNewPartLabel(e.target.value)} placeholder="ex: Filtre à huile" style={{ width: "100%", padding: 8 }} />
+            <input
+              value={newPartLabel}
+              onChange={(e) => setNewPartLabel(e.target.value)}
+              placeholder="ex: Filtre à huile"
+              style={{ width: "100%", padding: 8 }}
+            />
           </div>
           <button>Ajouter</button>
         </form>
@@ -1429,14 +1450,27 @@ function DbTab(props: {
       {/* Fournisseurs */}
       <div style={{ marginTop: 24 }}>
         <h3>Fournisseurs</h3>
-        <form onSubmit={addSupplier} style={{ display: "grid", gridTemplateColumns: "2fr 2fr auto", gap: 8, alignItems: "end" }}>
+        <form
+          onSubmit={addSupplier}
+          style={{ display: "grid", gridTemplateColumns: "2fr 2fr auto", gap: 8, alignItems: "end" }}
+        >
           <div>
             <label>Nom</label>
-            <input value={newSupplierName} onChange={(e) => setNewSupplierName(e.target.value)} placeholder="ex: PiècesPro" style={{ width: "100%", padding: 8 }} />
+            <input
+              value={newSupplierName}
+              onChange={(e) => setNewSupplierName(e.target.value)}
+              placeholder="ex: PiècesPro"
+              style={{ width: "100%", padding: 8 }}
+            />
           </div>
           <div>
             <label>URL (optionnel)</label>
-            <input value={newSupplierUrl} onChange={(e) => setNewSupplierUrl(e.target.value)} placeholder="https://..." style={{ width: "100%", padding: 8 }} />
+            <input
+              value={newSupplierUrl}
+              onChange={(e) => setNewSupplierUrl(e.target.value)}
+              placeholder="https://..."
+              style={{ width: "100%", padding: 8 }}
+            />
           </div>
           <button>Ajouter</button>
         </form>
@@ -1483,10 +1517,18 @@ function DbTab(props: {
       {/* Sites */}
       <div style={{ marginTop: 24 }}>
         <h3>Sites</h3>
-        <form onSubmit={addSite} style={{ display: "grid", gridTemplateColumns: "2fr auto", gap: 8, alignItems: "end" }}>
+        <form
+          onSubmit={addSite}
+          style={{ display: "grid", gridTemplateColumns: "2fr auto", gap: 8, alignItems: "end" }}
+        >
           <div>
             <label>Nom du site</label>
-            <input value={newSiteName} onChange={(e) => setNewSiteName(e.target.value)} placeholder="ex: Atelier A" style={{ width: "100%", padding: 8 }} />
+            <input
+              value={newSiteName}
+              onChange={(e) => setNewSiteName(e.target.value)}
+              placeholder="ex: Atelier A"
+              style={{ width: "100%", padding: 8 }}
+            />
           </div>
           <button>Ajouter</button>
         </form>
@@ -1533,7 +1575,16 @@ function AdminTab(props: {
   approvePendingRef: (p: any) => Promise<void>;
   rejectPendingRef: (id: string) => Promise<void>;
 }) {
-  const { users, sites, pendingRefs, setUsers, setUserSite, toggleUserAdmin, approvePendingRef, rejectPendingRef } = props;
+  const {
+    users,
+    sites,
+    pendingRefs,
+    setUsers,
+    setUserSite,
+    toggleUserAdmin,
+    approvePendingRef,
+    rejectPendingRef,
+  } = props;
 
   return (
     <section>
@@ -1542,25 +1593,41 @@ function AdminTab(props: {
       {/* Utilisateurs */}
       <div style={{ marginTop: 12 }}>
         <h3>Utilisateurs</h3>
-        <p style={{ opacity: 0.8, marginTop: 0 }}>Assigner un site et/ou basculer un compte en admin.</p>
+        <p style={{ opacity: 0.8, marginTop: 0 }}>
+          Assigner un site et/ou basculer un compte en admin.
+        </p>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>
-              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Email</th>
-              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Site</th>
-              <th style={{ textAlign: "center", padding: 8, borderBottom: "1px solid #eee" }}>Admin</th>
-              <th style={{ textAlign: "right", padding: 8, borderBottom: "1px solid #eee" }}>Action</th>
+              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>
+                Email
+              </th>
+              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>
+                Site
+              </th>
+              <th style={{ textAlign: "center", padding: 8, borderBottom: "1px solid #eee" }}>
+                Admin
+              </th>
+              <th style={{ textAlign: "right", padding: 8, borderBottom: "1px solid #eee" }}>
+                Action
+              </th>
             </tr>
           </thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id}>
-                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{u.email || u.id}</td>
+                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>
+                  {u.email || u.id}
+                </td>
                 <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>
                   <select
                     value={u.site || ""}
                     onChange={(e) =>
-                      setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, site: e.target.value || null } : x)))
+                      setUsers((prev) =>
+                        prev.map((x) =>
+                          x.id === u.id ? { ...x, site: e.target.value || null } : x
+                        )
+                      )
                     }
                     style={{ padding: 6, minWidth: 160 }}
                   >
@@ -1572,12 +1639,22 @@ function AdminTab(props: {
                     ))}
                   </select>
                 </td>
-                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2", textAlign: "center" }}>
+                <td
+                  style={{
+                    padding: 8,
+                    borderBottom: "1px solid #f2f2f2",
+                    textAlign: "center",
+                  }}
+                >
                   <input
                     type="checkbox"
                     checked={u.is_admin}
                     onChange={(e) =>
-                      setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, is_admin: e.target.checked } : x)))
+                      setUsers((prev) =>
+                        prev.map((x) =>
+                          x.id === u.id ? { ...x, is_admin: e.target.checked } : x
+                        )
+                      )
                     }
                   />
                 </td>
@@ -1585,7 +1662,10 @@ function AdminTab(props: {
                   <button
                     type="button"
                     onClick={() =>
-                      Promise.all([setUserSite(u.id, u.site || null), toggleUserAdmin(u.id, u.is_admin)]).then(() => void 0)
+                      Promise.all([
+                        setUserSite(u.id, u.site || null),
+                        toggleUserAdmin(u.id, u.is_admin),
+                      ]).then(() => void 0)
                     }
                   >
                     Enregistrer
@@ -1613,12 +1693,24 @@ function AdminTab(props: {
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>
-              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Créée</th>
-              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Fournisseur</th>
-              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Réf fournisseur</th>
-              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>Pièce</th>
-              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>URL</th>
-              <th style={{ textAlign: "right", padding: 8, borderBottom: "1px solid #eee" }}>Actions</th>
+              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>
+                Créée
+              </th>
+              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>
+                Fournisseur
+              </th>
+              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>
+                Réf fournisseur
+              </th>
+              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>
+                Pièce
+              </th>
+              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #eee" }}>
+                URL
+              </th>
+              <th style={{ textAlign: "right", padding: 8, borderBottom: "1px solid #eee" }}>
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -1627,7 +1719,9 @@ function AdminTab(props: {
                 <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>
                   {p.created_at ? new Date(p.created_at).toLocaleString() : "—"}
                 </td>
-                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>{p.supplier?.name || p.supplier_id}</td>
+                <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>
+                  {p.supplier?.name || p.supplier_id}
+                </td>
                 <td style={{ padding: 8, borderBottom: "1px solid #f2f2f2" }}>
                   <code>{p.supplier_ref}</code>
                 </td>
