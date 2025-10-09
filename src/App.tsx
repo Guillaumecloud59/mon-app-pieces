@@ -1680,4 +1680,4 @@ function AdminTab(props: {
 }
 
 // S'assurer qu'on exporte bien le composant principal
-export default App;
+
