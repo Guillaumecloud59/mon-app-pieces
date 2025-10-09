@@ -69,6 +69,7 @@ export default function App() {
 
   // --- Inventaire ---
   const [inventory, setInventory] = useState<InventoryRow[]>([]);
+  const [editLoc, setEditLoc] = useState<Record<string, string>>({});
   const knownLocationBySitePart = useMemo(() => {
     const map: Record<string, string> = {};
     for (const row of inventory) {
@@ -189,6 +190,39 @@ export default function App() {
     if (error) return notify(error.message, "error");
     setOrders((data || []) as OrderOverview[]);
   }
+async function updateInventoryLocation(row: InventoryRow, newLoc: string): Promise<void> {
+  const key = `${row.site}|${row.part_id}|${row.condition}`;
+
+  // Optimistic UI
+  setInventory(prev =>
+    prev.map(r =>
+      r.site === row.site && r.part_id === row.part_id && r.condition === row.condition
+        ? { ...r, location: newLoc || null }
+        : r
+    )
+  );
+
+  const { error } = await supabase
+    .from("inventory")
+    .update({ location: newLoc || null })
+    .eq("site", row.site)
+    .eq("part_id", row.part_id)
+    .eq("condition", row.condition);
+
+  if (error) {
+    console.error(error);
+    await loadInventory();                  // rollback si erreur
+    setEditLoc(prev => ({ ...prev, [key]: row.location || "" }));
+  } else {
+    // nettoyage et refresh (utile pour la réception auto-remplie)
+    setEditLoc(prev => {
+      const clone = { ...prev };
+      delete clone[key];
+      return clone;
+    });
+    await loadInventory();
+  }
+}
 
   async function loadOrderItems(orderId: string): Promise<void> {
     const { data, error } = await supabase
@@ -924,7 +958,41 @@ export default function App() {
                       {p ? `${p.sku} — ${p.label}` : r.part_id}
                     </td>
                     <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{r.condition}</td>
-                    <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8 }}>{r.location || "—"}</td>
+                    <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, minWidth: 160 }}>
+  {(() => {
+    const key = `${r.site}|${r.part_id}|${r.condition}`;
+    const value = key in editLoc ? editLoc[key] : (r.location || "");
+    const canEdit =
+      profile?.is_admin ||
+      (!!profile?.site && profile.site === r.site); // seuls admin ou utilisateur du site
+
+    if (!canEdit) return <span>{r.location || "—"}</span>;
+
+    return (
+      <input
+        value={value}
+        onChange={(e) => setEditLoc((prev) => ({ ...prev, [key]: e.target.value }))}
+        onBlur={() => void updateInventoryLocation(r, value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            (e.currentTarget as HTMLInputElement).blur(); // déclenche onBlur
+          }
+          if (e.key === "Escape") {
+            // reset à la valeur d’origine si annulation
+            setEditLoc((prev) => {
+              const clone = { ...prev };
+              clone[key] = r.location || "";
+              return clone;
+            });
+          }
+        }}
+        placeholder="ex: A-01-03"
+        style={{ width: "100%", padding: 6 }}
+      />
+    );
+  })()}
+</td>
+
                     <td style={{ borderBottom: "1px solid #f2f2f2", padding: 8, textAlign: "right" }}>{r.qty}</td>
                   </tr>
                 );
