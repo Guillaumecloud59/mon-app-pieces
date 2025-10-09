@@ -1232,6 +1232,8 @@ async function markOrderAsOrdered(): Promise<void> {
 
 // ========= Sous-composants =========
 
+// ========= Sous-composants =========
+
 function OrdersLists({
   orders,
   query,
@@ -1760,3 +1762,6 @@ function AdminTab(props: {
     </section>
   );
 }
+
+// S'assurer qu'on exporte bien le composant principal
+export default App;
